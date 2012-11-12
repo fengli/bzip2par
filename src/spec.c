@@ -37,7 +37,7 @@ int debug_time();
 #define DEBUG 1
 
 #ifdef DEBUG
-int dbglvl=5;
+int dbglvl=4;
 #define debug(level,str)           { if (level<dbglvl) printf(str); }
 #define debug1(level,str, a)       { if (level<dbglvl) printf(str, a); }
 #define debug2(level,str, a, b)    { if (level<dbglvl) printf(str, a,b); }
@@ -259,7 +259,6 @@ int spec_putc(unsigned char ch, int fd) {
 }
 
 #define MB (1024*1024)
-#define MB (1)			/* For Debugging Only: */
 
 #ifdef SPEC_CPU2000
 int main (int argc, char *argv[]) {
@@ -305,7 +304,7 @@ int main (int argc, char *argv[]) {
 
     spec_initbufs();
 
-    for (level=7; level <= 9; level += 2) {
+    for (level=7; level <= 7; level += 2) {
 	debug_time();
 	debug1(2, "Compressing Input Data, level %d\n", level);
 

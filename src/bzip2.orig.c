@@ -569,6 +569,7 @@ Int32  blockSize100k;
 int  blockSize100k;
 #endif
 
+#define SIZE100K 100000
 
 /*--
   Used when sorting.  If too many long comparisons
@@ -1130,7 +1131,8 @@ void hbCreateDecodeTables ( Int32 *limit,
 /*---------------------------------------------*/
 void allocateCompressStructures ( void )
 {
-   Int32 n  = 100000 * blockSize100k;
+   Int32 n  = SIZE100K * blockSize100k;
+   Int32 mi;
    block    = malloc ( (n + 1 + NUM_OVERSHOOT_BYTES) * sizeof(UChar) );
 
    /* quadrant is used only when sorting, so this could be local.  */
@@ -1138,6 +1140,7 @@ void allocateCompressStructures ( void )
 
    /* zptr used in all 3 stages.  */
    zptr     = malloc ( n                             * sizeof(Int32) );
+   for (mi = 0; mi < n; mi++) zptr[mi]=0;
 
    /* Used only in SortIt. This could also be local.  */
    ftab     = malloc ( 65537                         * sizeof(Int32) );
@@ -1715,7 +1718,7 @@ void getAndMoveToFrontDecode ( void )
    Int32  i, j, nextSym, limitLast;
    Int32  EOB, groupNo, groupPos;
 
-   limitLast = 100000 * blockSize100k;
+   limitLast = SIZE100K * blockSize100k;
    origPtr   = bsGetIntVS ( 24 );
 
    recvDecodingTables();
@@ -2808,7 +2811,7 @@ void loadAndRLEsource ( FILE* src )
    for (i = 0; i < 256; i++) inUse[i] = False;
 
    /*--- 20 is just a paranoia constant ---*/
-   allowableBlockSize = 100000 * blockSize100k - 20;
+   allowableBlockSize = SIZE100K * blockSize100k - 20;
 
    while (last < allowableBlockSize && ch != MY_EOF) {
       Int32 rlePair, runLen;

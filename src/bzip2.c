@@ -576,6 +576,7 @@ Int32  blockSize100k;
 int  blockSize100k;
 #endif
 
+#define SIZE100K 100000
 
 /*--
   Used when sorting.  If too many long comparisons
@@ -1137,7 +1138,7 @@ void hbCreateDecodeTables ( Int32 *limit,
 /*---------------------------------------------*/
 void allocateCompressStructures ( void )
 {
-   Int32 n  = 100000 * blockSize100k;
+   Int32 n  = SIZE100K * blockSize100k;
    block    = malloc ( (n + 1 + NUM_OVERSHOOT_BYTES) * sizeof(UChar) );
 
    /* quadrant is used only when sorting, so this could be local.  */
@@ -1270,8 +1271,8 @@ void generateMTFValues ( UChar *block, Int32 last, UInt16* szptr, Bool *inUse,
    Int32  zPend;
    Int32  wr;
    Int32  EOB;
-   UChar seqToUnseq[256];
-   UChar unseqToSeq[256];
+   UChar seqToUnseq[256]={0};
+   UChar unseqToSeq[256]={0};
    Int32 *zptr = (Int32 *) szptr;
 
    df_makeMaps(nInUse, seqToUnseq, unseqToSeq, inUse);
@@ -1639,12 +1640,16 @@ void sendMTFValues ( UInt16 *szptr, Int32 *nMTF, Int32 nInUse, Bool *inUse )
 void moveToFrontCodeAndSend ( UChar *block, Int32 last, UInt16* szptr,
 			      Int32 origPtr, Bool *inUse )
 {
+  debug ("moveToFrontCodeAndSend start");
   Int32 mtfFreq[MAX_ALPHA_SIZE];
   Int32 nMTF;
   Int32 nInUse;
   bsPutIntVS ( 24, origPtr );
+  debug ("generateMTFValues start");
   generateMTFValues(block, last, szptr, inUse, &nInUse, mtfFreq, &nMTF);
+  debug ("generateMTFValues end");
   sendMTFValues(szptr, &nMTF, nInUse, inUse);
+  debug ("moveToFrontCodeAndSend end");
 }
 
 
@@ -1749,7 +1754,7 @@ void getAndMoveToFrontDecode ( void )
    Int32  i, j, nextSym, limitLast;
    Int32  EOB, groupNo, groupPos;
 
-   limitLast = 100000 * blockSize100k;
+   limitLast = SIZE100K * blockSize100k;
    origPtr   = bsGetIntVS ( 24 );
 
    recvDecodingTables();
@@ -1953,6 +1958,7 @@ INLINE Bool df_fullGtU ( UChar *block, Int32* last_p, Int16* quadrant,
    Int32 k;
    UChar c1, c2;
    UInt16 s1, s2;
+   Int32 last = *last_p;
 
    #if DEBUG
       /*--
@@ -2032,7 +2038,7 @@ INLINE Bool df_fullGtU ( UChar *block, Int32* last_p, Int16* quadrant,
       if (i2 > last) { i2 -= last; i2--; };
 
       k -= 4;
-      workDone++;
+      *workDone++;
    }
       while (k >= 0);
 
@@ -2575,7 +2581,7 @@ void df_sortIt ( UChar *block, Int32* last_p, Int32 *zptr,
 
    /****: ftab could be local since it's just used in this function.  ****/
    Int32 *ftab = malloc ( 65537 * sizeof(Int32) );
-   UInt16 *quadrant = malloc (((100000 * blockSize100k)+NUM_OVERSHOOT_BYTES)*sizeof (Int16));
+   UInt16 *quadrant = malloc (((SIZE100K * blockSize100k)+NUM_OVERSHOOT_BYTES)*sizeof (Int16));
    /*--
       In the various block-sized structures, live data runs
       from 0 to last+NUM_OVERSHOOT_BYTES inclusive.  First,
@@ -3259,7 +3265,7 @@ void loadAndRLEsource ( FILE* src, Bool inUse[256], UChar *block, Int32* last)
    for (i = 0; i < 256; i++) inUse[i] = False;
 
    /*--- 20 is just a paranoia constant ---*/
-   allowableBlockSize = 100000 * blockSize100k - 20;
+   allowableBlockSize = SIZE100K * blockSize100k - 20;
 
    while (*last < allowableBlockSize && ch != MY_EOF) {
       Int32 rlePair, runLen;
@@ -3346,9 +3352,11 @@ void compressStream ( FILE *stream, FILE *zStream )
       globalCrc = 0xffffffffUL;      //initialiseCRC ();  //inline
 
       Int32 last;
-      Int32 n         = 100000 * blockSize100k;
+      Int32 n         = SIZE100K * blockSize100k;
       UChar *block    = malloc ( (n + 1 + NUM_OVERSHOOT_BYTES) * sizeof(UChar) );
       Int32 *zptr     = malloc ( n                             * sizeof(Int32) );
+      Int32 mi;
+      for (mi = 0; mi < n; mi++) zptr[mi]=0;
 
       UInt16 *szptr   = (UInt16 *)zptr;
       block++;
