@@ -113,7 +113,9 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <assert.h>
+#if DEBUG
+  #include <assert.h>
+#endif
 #include <string.h>
 #include <signal.h>
 #include <math.h>
@@ -352,15 +354,9 @@ int debug_time();
    change to 1, or compile with -DDEBUG=1 to debug
 --*/
 #ifndef DEBUG
-#define DEBUG 1
+#define DEBUG 0
 #endif
 
-#ifdef DEBUG
-#define debug(str) {printf(str);};fflush(stdout)
-#define debug1(str,a) {printf(str,a);}fflush(stdout)
-#else
-#define debug(str)
-#endif
 
 /*---------------------------------------------------*/
 /*---                                             ---*/
@@ -569,7 +565,6 @@ Int32  blockSize100k;
 int  blockSize100k;
 #endif
 
-#define SIZE100K 100000
 
 /*--
   Used when sorting.  If too many long comparisons
@@ -1131,20 +1126,12 @@ void hbCreateDecodeTables ( Int32 *limit,
 /*---------------------------------------------*/
 void allocateCompressStructures ( void )
 {
-   Int32 n  = SIZE100K * blockSize100k;
-   Int32 mi;
+   Int32 n  = 100000 * blockSize100k;
    block    = malloc ( (n + 1 + NUM_OVERSHOOT_BYTES) * sizeof(UChar) );
-
-   /* quadrant is used only when sorting, so this could be local.  */
    quadrant = malloc ( (n     + NUM_OVERSHOOT_BYTES) * sizeof(Int16) );
-
-   /* zptr used in all 3 stages.  */
    zptr     = malloc ( n                             * sizeof(Int32) );
-   for (mi = 0; mi < n; mi++) zptr[mi]=0;
-
-   /* Used only in SortIt. This could also be local.  */
    ftab     = malloc ( 65537                         * sizeof(Int32) );
-   
+
    if (block == NULL || quadrant == NULL ||
        zptr == NULL  || ftab == NULL) {
       Int32 totalDraw
@@ -1173,7 +1160,6 @@ void allocateCompressStructures ( void )
       of the MTF values when calculating coding tables.
       Seems to improve compression speed by about 1%.
    --*/
-   /* Used in sendMTFValues and generateMTFValues */
    szptr = (UInt16*)zptr;
 }
 
@@ -1718,7 +1704,7 @@ void getAndMoveToFrontDecode ( void )
    Int32  i, j, nextSym, limitLast;
    Int32  EOB, groupNo, groupPos;
 
-   limitLast = SIZE100K * blockSize100k;
+   limitLast = 100000 * blockSize100k;
    origPtr   = bsGetIntVS ( 24 );
 
    recvDecodingTables();
@@ -2066,8 +2052,7 @@ void qSort3 ( Int32 loSt, Int32 hiSt, Int32 dSt )
 
       if (hi - lo < SMALL_THRESH || d > DEPTH_THRESH) {
          simpleSort ( lo, hi, d );
-         if (workDone > workLimit && firstAttempt)
-	   return;
+         if (workDone > workLimit && firstAttempt) return;
          continue;
       }
 
@@ -2148,7 +2133,7 @@ void sortIt ( void )
 
    block[-1] = block[last];
 
-   if (last < 40) {
+   if (last < 4000) {
 
       /*--
          Use simpleSort(), since the full sorting mechanism
@@ -2249,8 +2234,7 @@ void sortIt ( void )
                                ss, j, numQSorted, hi - lo + 1 );
                   qSort3 ( lo, hi, 2 );
                   numQSorted += ( hi - lo + 1 );
-                  if (workDone > workLimit && firstAttempt)
-		    return;
+                  if (workDone > workLimit && firstAttempt) return;
                }
                ftab[sb] |= SETMASK;
             }
@@ -2390,7 +2374,10 @@ Int32 rNums[512] = {
 /*--- The Reversible Transformation (tm)          ---*/
 /*---------------------------------------------------*/
 
-/*---------------------------------------------*/
+/*****************************************
+  Input: inUse[0..256]={0}, block[0..last]
+  Output:inUse[0..256],     block[0..last]
+*****************************************/
 void randomiseBlock ( void )
 {
    Int32 i;
@@ -2408,8 +2395,6 @@ void randomiseBlock ( void )
 /*---------------------------------------------*/
 void doReversibleTransformation ( void )
 {
-   debug ("doReversibleTransformation start\n");
-  
    Int32 i;
 
    if (verbosity >= 2) fprintf ( stderr, "\n" );
@@ -2444,7 +2429,6 @@ void doReversibleTransformation ( void )
           { origPtr = i; break; };
 
    if (origPtr == -1) panic ( "doReversibleTransformation" );
-   debug ("doReversibleTransformation start\n");
 }
 
 
@@ -2794,17 +2778,12 @@ INLINE Int32 getRLEpair ( FILE* src )
 
 
 /*---------------------------------------------*/
-/* input: stream src
-   output: block[0..last]*/
-
 #ifdef SPEC_CPU2000
 void loadAndRLEsource ( int src )
 #else
 void loadAndRLEsource ( FILE* src )
 #endif
 {
-   debug ("loadAndRLEsource start\n");
-
    Int32 ch, allowableBlockSize, i;
 
    last = -1;
@@ -2813,7 +2792,7 @@ void loadAndRLEsource ( FILE* src )
    for (i = 0; i < 256; i++) inUse[i] = False;
 
    /*--- 20 is just a paranoia constant ---*/
-   allowableBlockSize = SIZE100K * blockSize100k - 20;
+   allowableBlockSize = 100000 * blockSize100k - 20;
 
    while (last < allowableBlockSize && ch != MY_EOF) {
       Int32 rlePair, runLen;
@@ -2847,7 +2826,6 @@ void loadAndRLEsource ( FILE* src )
          }
       }
    }
-   debug ("loadAndRLEsource finish\n");
 }
 
 

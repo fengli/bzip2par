@@ -1,12 +1,5 @@
 #define SPEC_CPU2000
 
-/* #define DEBUG1 */
-/* #ifdef DEBUG1 */
-/* int dbglvl1=5; */
-/* #define debug(level,str)           { if (level<dbglvl1) printf(str); } */
-/* #else */
-/* #define debug(level,str) */
-/* #endif */
 /*-----------------------------------------------------------*/
 /*--- A block-sorting, lossless compressor        bzip2.c ---*/
 /*-----------------------------------------------------------*/
@@ -1952,13 +1945,12 @@ INLINE Bool fullGtU ( Int32 i1, Int32 i2 )
    return False;
 }
 
-INLINE Bool df_fullGtU ( UChar *block, Int32* last_p, Int16* quadrant,
-			 Int32 *workDone, Int32 i1, Int32 i2 )
+INLINE Bool df_fullGtU ( UChar *block, Int32 last, UInt16* quadrant,
+			 Int32 *workDone_p, Int32 i1, Int32 i2 )
 {
    Int32 k;
    UChar c1, c2;
    UInt16 s1, s2;
-   Int32 last = *last_p;
 
    #if DEBUG
       /*--
@@ -2038,7 +2030,7 @@ INLINE Bool df_fullGtU ( UChar *block, Int32* last_p, Int16* quadrant,
       if (i2 > last) { i2 -= last; i2--; };
 
       k -= 4;
-      *workDone++;
+      (*workDone_p)++;
    }
       while (k >= 0);
 
@@ -2117,13 +2109,12 @@ void simpleSort ( Int32 lo, Int32 hi, Int32 d )
    }
 }
 
-void df_simpleSort ( UChar *block, Int32* last_p, Int32 *zptr, UInt16 *quadrant,
-		  Int32 workDone, Int32 workLimit, Bool firstAttempt,
+void df_simpleSort ( UChar *block, Int32 last, Int32 *zptr, UInt16 *quadrant,
+		  Int32 *workDone_p, Int32 workLimit, Bool firstAttempt,
 		  Int32 lo, Int32 hi, Int32 d )
 {
    Int32 i, j, h, bigN, hp;
    Int32 v;
-   Int32 last = *last_p;
 
    bigN = hi - lo + 1;
    if (bigN < 2) return;
@@ -2144,7 +2135,7 @@ void df_simpleSort ( UChar *block, Int32* last_p, Int32 *zptr, UInt16 *quadrant,
          if (i > hi) break;
          v = zptr[i];
          j = i;
-         while ( df_fullGtU ( block, last_p, quadrant, &workDone, zptr[j-h]+d, v+d ) ) {
+         while ( df_fullGtU ( block, last, quadrant, workDone_p, zptr[j-h]+d, v+d ) ) {
             zptr[j] = zptr[j-h];
             j = j - h;
             if (j <= (lo + h - 1)) break;
@@ -2156,7 +2147,7 @@ void df_simpleSort ( UChar *block, Int32* last_p, Int32 *zptr, UInt16 *quadrant,
          if (i > hi) break;
          v = zptr[i];
          j = i;
-         while ( df_fullGtU ( block ,last_p, quadrant, &workDone, zptr[j-h]+d, v+d ) ) {
+         while ( df_fullGtU ( block ,last, quadrant, workDone_p, zptr[j-h]+d, v+d ) ) {
             zptr[j] = zptr[j-h];
             j = j - h;
             if (j <= (lo + h - 1)) break;
@@ -2168,7 +2159,7 @@ void df_simpleSort ( UChar *block, Int32* last_p, Int32 *zptr, UInt16 *quadrant,
          if (i > hi) break;
          v = zptr[i];
          j = i;
-         while ( df_fullGtU ( block, last_p, quadrant, &workDone, zptr[j-h]+d, v+d ) ) {
+         while ( df_fullGtU ( block, last, quadrant, workDone_p, zptr[j-h]+d, v+d ) ) {
             zptr[j] = zptr[j-h];
             j = j - h;
             if (j <= (lo + h - 1)) break;
@@ -2176,7 +2167,7 @@ void df_simpleSort ( UChar *block, Int32* last_p, Int32 *zptr, UInt16 *quadrant,
          zptr[j] = v;
          i++;
 
-         if (workDone > workLimit && firstAttempt) return;
+         if (*workDone_p > workLimit && firstAttempt) return;
       }
    }
 }
@@ -2309,7 +2300,7 @@ void qSort3 ( Int32 loSt, Int32 hiSt, Int32 dSt )
 }
 
 void df_qSort3 ( UChar *block, Int32 last, Int32 *zptr, UInt16* quadrant,
-	      Int32 workDone, Int32 workLimit, Bool firstAttempt,
+	      Int32 *workDone_p, Int32 workLimit, Bool firstAttempt,
 	      Int32 loSt, Int32 hiSt, Int32 dSt)
 {
    Int32 unLo, unHi, ltLo, gtHi, med, n, m;
@@ -2326,8 +2317,9 @@ void df_qSort3 ( UChar *block, Int32 last, Int32 *zptr, UInt16* quadrant,
       pop ( lo, hi, d );
 
       if (hi - lo < SMALL_THRESH || d > DEPTH_THRESH) {
-	df_simpleSort ( block, &last, zptr, quadrant, workDone, workLimit, firstAttempt, lo, hi, d );
-         if (workDone > workLimit && firstAttempt) return;
+	df_simpleSort ( block, last, zptr, quadrant, workDone_p, workLimit, firstAttempt, lo, hi, d );
+         if (*workDone_p > workLimit && firstAttempt)
+	   return;
          continue;
       }
 
@@ -2408,7 +2400,7 @@ void sortIt ( void )
 
    block[-1] = block[last];
 
-   if (last < 4000) {
+   if (last < 400) {
 
       /*--
          Use simpleSort(), since the full sorting mechanism
@@ -2568,8 +2560,8 @@ void sortIt ( void )
    }
 }
 
-void df_sortIt ( UChar *block, Int32* last_p, Int32 *zptr,
-	      Int32 *workDone, Int32 *workLimit, Bool *firstAttempt )
+void df_sortIt ( UChar *block, Int32 last, Int32 *zptr,
+	      Int32 *workDone_p, Int32 *workLimit_p, Bool *firstAttempt_p )
 {
    Int32 i, j, ss, sb;
    Int32 runningOrder[256];
@@ -2577,7 +2569,6 @@ void df_sortIt ( UChar *block, Int32* last_p, Int32 *zptr,
    Bool bigDone[256];
    UChar c1, c2;
    Int32 numQSorted;
-   Int32 last = *last_p;
 
    /****: ftab could be local since it's just used in this function.  ****/
    Int32 *ftab = malloc ( 65537 * sizeof(Int32) );
@@ -2596,7 +2587,7 @@ void df_sortIt ( UChar *block, Int32* last_p, Int32 *zptr,
 
    block[-1] = block[last];
 
-   if (last < 4000) {
+   if (last < 40) {
 
       /*--
          Use simpleSort(), since the full sorting mechanism
@@ -2604,9 +2595,9 @@ void df_sortIt ( UChar *block, Int32* last_p, Int32 *zptr,
       --*/
       if (verbosity >= 4) fprintf ( stderr, "        simpleSort ...\n" );
       for (i = 0; i <= last; i++) zptr[i] = i;
-      *firstAttempt = False;
-      *workDone = *workLimit = 0;
-      df_simpleSort ( block, last_p, zptr, quadrant, *workDone, *workLimit, *firstAttempt, 0, last, 0 );
+      *firstAttempt_p = False;
+      *workDone_p = *workLimit_p = 0;
+      df_simpleSort ( block, last, zptr, quadrant, workDone_p, *workLimit_p, *firstAttempt_p, 0, last, 0 );
       if (verbosity >= 4) fprintf ( stderr, "        simpleSort done.\n" );
 
    } else {
@@ -2695,9 +2686,10 @@ void df_sortIt ( UChar *block, Int32* last_p, Int32 *zptr,
                      fprintf ( stderr,
                                "        qsort [0x%x, 0x%x]   done %d   this %d\n",
                                ss, j, numQSorted, hi - lo + 1 );
-                  df_qSort3 ( block, last, zptr, quadrant, *workDone, *workLimit, *firstAttempt, lo, hi, 2 );
+                  df_qSort3 ( block, last, zptr, quadrant, workDone_p, *workLimit_p, *firstAttempt_p, lo, hi, 2 );
                   numQSorted += ( hi - lo + 1 );
-                  if (workDone > workLimit && firstAttempt) return;
+                  if (*workDone_p > *workLimit_p && *firstAttempt_p)
+		    return;
                }
                ftab[sb] |= SETMASK;
             }
@@ -2752,7 +2744,7 @@ void df_sortIt ( UChar *block, Int32* last_p, Int32 *zptr,
       }
       if (verbosity >= 4)
          fprintf ( stderr, "        %d pointers, %d sorted, %d scanned\n",
-                           last+1, numQSorted, (last+1) - numQSorted );
+		   last+1, numQSorted, (last+1) - numQSorted );
    }
 
    free (ftab);
@@ -2856,20 +2848,19 @@ void randomiseBlock ( UChar *block, Bool *inUse )
 
 
 /*---------------------------------------------*/
-Bool doReversibleTransformation ( UChar *block, Int32* last_p, Int32 *zptr, Int32 *origPtr, Bool *inUse)
+Bool doReversibleTransformation ( UChar *block, Int32 last, Int32 *zptr, Int32 *origPtr_p, Bool *inUse)
 {
    debug ("doReversibleTransformation start\n");
   
    Int32 i;
 
    if (verbosity >= 2) fprintf ( stderr, "\n" );
-   Int32 last            = *last_p;
    Int32 workLimit       = workFactor * last;
    Int32 workDone        = 0;
    Bool firstAttempt    = True;
    Bool blockRandomised = False;
 
-   df_sortIt (block, last_p, zptr, &workDone, &workLimit, &firstAttempt);
+   df_sortIt (block, last, zptr, &workDone, &workLimit, &firstAttempt);
 
    if (verbosity >= 3)
       fprintf ( stderr, "      %d work, %d block, ratio %5.2f\n",
@@ -2882,18 +2873,18 @@ Bool doReversibleTransformation ( UChar *block, Int32* last_p, Int32 *zptr, Int3
       workLimit = workDone = 0;
       blockRandomised = True;
       firstAttempt = False;
-      df_sortIt(block,last_p,zptr,&workDone,&workLimit,&firstAttempt);
+      df_sortIt(block,last,zptr,&workDone,&workLimit,&firstAttempt);
       if (verbosity >= 3)
          fprintf ( stderr, "      %d work, %d block, ratio %f\n",
                            workDone, last, (float)workDone / (float)(last) );
    }
 
-   *origPtr = -1;
+   *origPtr_p = -1;
    for (i = 0; i <= last; i++)
        if (zptr[i] == 0)
-          { *origPtr = i; break; };
+          { *origPtr_p = i; break; };
 
-   if (*origPtr == -1) panic ( "doReversibleTransformation" );
+   if (*origPtr_p == -1) panic ( "doReversibleTransformation" );
 
    debug ("doReversibleTransformation finish\n");
    return blockRandomised;
@@ -3250,16 +3241,16 @@ INLINE Int32 getRLEpair ( FILE* src )
    output: block[0..last]*/
 
 #ifdef SPEC_CPU2000
-void loadAndRLEsource ( int src , Bool inUse[256], UChar *block, Int32* last)
+void loadAndRLEsource ( int src , Bool inUse[256], UChar *block, Int32* last_p)
 #else
-void loadAndRLEsource ( FILE* src, Bool inUse[256], UChar *block, Int32* last)
+void loadAndRLEsource ( FILE* src, Bool inUse[256], UChar *block, Int32* last_p)
 #endif
 {
    debug ("loadAndRLEsource start\n");
   
    Int32 ch, allowableBlockSize, i;
 
-   *last = -1;
+   *last_p = -1;
    ch   = 0;
 
    for (i = 0; i < 256; i++) inUse[i] = False;
@@ -3267,7 +3258,7 @@ void loadAndRLEsource ( FILE* src, Bool inUse[256], UChar *block, Int32* last)
    /*--- 20 is just a paranoia constant ---*/
    allowableBlockSize = SIZE100K * blockSize100k - 20;
 
-   while (*last < allowableBlockSize && ch != MY_EOF) {
+   while (*last_p < allowableBlockSize && ch != MY_EOF) {
       Int32 rlePair, runLen;
       rlePair = getRLEpair ( src );
       ch      = rlePair & 0xFFFF;
@@ -3281,21 +3272,21 @@ void loadAndRLEsource ( FILE* src, Bool inUse[256], UChar *block, Int32* last)
          inUse[ch] = True;
          switch (runLen) {
             case 1:
-	      (*last)++; block[(*last)] = (UChar)ch; break;
+	      (*last_p)++; block[(*last_p)] = (UChar)ch; break;
             case 2:
-	      (*last)++; block[(*last)] = (UChar)ch;
-               (*last)++; block[(*last)] = (UChar)ch; break;
+	      (*last_p)++; block[(*last_p)] = (UChar)ch;
+               (*last_p)++; block[(*last_p)] = (UChar)ch; break;
             case 3:
-               (*last)++; block[(*last)] = (UChar)ch;
-               (*last)++; block[(*last)] = (UChar)ch;
-               (*last)++; block[(*last)] = (UChar)ch; break;
+               (*last_p)++; block[(*last_p)] = (UChar)ch;
+               (*last_p)++; block[(*last_p)] = (UChar)ch;
+               (*last_p)++; block[(*last_p)] = (UChar)ch; break;
             default:
                inUse[runLen-4] = True;
-               (*last)++; block[(*last)] = (UChar)ch;
-               (*last)++; block[(*last)] = (UChar)ch;
-               (*last)++; block[(*last)] = (UChar)ch;
-               (*last)++; block[(*last)] = (UChar)ch;
-               (*last)++; block[(*last)] = (UChar)(runLen-4); break;
+               (*last_p)++; block[(*last_p)] = (UChar)ch;
+               (*last_p)++; block[(*last_p)] = (UChar)ch;
+               (*last_p)++; block[(*last_p)] = (UChar)ch;
+               (*last_p)++; block[(*last_p)] = (UChar)ch;
+               (*last_p)++; block[(*last_p)] = (UChar)(runLen-4); break;
          }
       }
    }
@@ -3379,7 +3370,7 @@ void compressStream ( FILE *stream, FILE *zStream )
                            blockNo, blockCRC, combinedCRC, last+1 );
 
       /*-- sort the block and establish posn of original string --*/
-      blockRandomised = doReversibleTransformation (block, &last, zptr, &origPtr, inUse);
+      blockRandomised = doReversibleTransformation (block, last, zptr, &origPtr, inUse);
 
       /*--
         A 6-byte block header, the value chosen arbitrarily
