@@ -118,6 +118,7 @@
 #include <signal.h>
 #include <math.h>
 
+
 #define ERROR_IF_EOF(i)       { if ((i) == EOF)  ioError(); }
 #define ERROR_IF_NOT_ZERO(i)  { if ((i) != 0)    ioError(); }
 #define ERROR_IF_MINUS_ONE(i) { if ((i) == (-1)) ioError(); }
@@ -125,8 +126,7 @@
 
 /*---------------------------------------------*/
 /*--
-   Platform-specific stuff.
---*/
+   Platform-specific stuff.--*/
 
 #ifdef SPEC_CPU2000
    #include <sys/types.h>
@@ -243,8 +243,8 @@
    #endif
 #endif
 
-
-
+void dump_array (const char *, Int32 *);
+void dump_block (const char *, UChar *, Int32);
 #if BZ_LCCWIN32
    #include <io.h>
    #include <fcntl.h>
@@ -526,6 +526,7 @@ void*   myMalloc ( Int32 );
   The structures are always set to be suitable
   for a block of size 100000 * blockSize100k.
 --*/
+
 UChar    *block;    /*-- compress   --*/
 UInt16   *quadrant; /*-- compress   --*/
 Int32    *zptr;     /*-- compress   --*/ 
@@ -1252,7 +1253,6 @@ void makeMaps ()
       }
 }
 
-
 /*---------------------------------------------*/
 void generateMTFValues ( UChar *block, Int32 last, UInt16* szptr, Bool *inUse,
 			 Int32 *nInUse, Int32 *mtfFreq, Int32 *nMTF)
@@ -1276,7 +1276,6 @@ void generateMTFValues ( UChar *block, Int32 last, UInt16* szptr, Bool *inUse,
    wr = 0;
    zPend = 0;
    for (i = 0; i < *nInUse; i++) yy[i] = (UChar) i;
-   
 
    for (i = 0; i <= last; i++) {
       UChar ll_i;
@@ -2185,7 +2184,15 @@ void df_simpleSort ( UChar *block, Int32 last, Int32 *zptr, UInt16 *quadrant,
 #define swap(lv1, lv2) \
    { Int32 tmp = lv1; lv1 = lv2; lv2 = tmp; }
 
-INLINE void vswap ( Int32 p1, Int32 p2, Int32 n )
+INLINE void vswap (Int32 p1, Int32 p2, Int32 n )
+{
+   while (n > 0) {
+      swap(zptr[p1], zptr[p2]);
+      p1++; p2++; n--;
+   }
+}
+
+INLINE void df_vswap (Int32 *zptr, Int32 p1, Int32 p2, Int32 n )
 {
    while (n > 0) {
       swap(zptr[p1], zptr[p2]);
@@ -2357,8 +2364,8 @@ void df_qSort3 ( UChar *block, Int32 last, Int32 *zptr, UInt16* quadrant,
          continue;
       }
 
-      n = min(ltLo-lo, unLo-ltLo); vswap(lo, unLo-n, n);
-      m = min(hi-gtHi, gtHi-unHi); vswap(unLo, hi-m+1, m);
+      n = min(ltLo-lo, unLo-ltLo); df_vswap(zptr, lo, unLo-n, n);
+      m = min(hi-gtHi, gtHi-unHi); df_vswap(zptr, unLo, hi-m+1, m);
 
       n = lo + unLo - ltLo - 1;
       m = hi - (gtHi - unHi) + 1;
@@ -2554,6 +2561,9 @@ void sortIt ( void )
 
          for (j = 0; j <= 255; j++) ftab[(j << 8) + ss] |= SETMASK;
       }
+      
+      dump_array("bzip2.after", zptr);
+      
       if (verbosity >= 4)
          fprintf ( stderr, "        %d pointers, %d sorted, %d scanned\n",
                            last+1, numQSorted, (last+1) - numQSorted );
@@ -2578,6 +2588,7 @@ void df_sortIt ( UChar *block, Int32 last, Int32 *zptr,
       from 0 to last+NUM_OVERSHOOT_BYTES inclusive.  First,
       set up the overshoot area for block.
    --*/
+   dump_block ("point7",block,last);
 
    if (verbosity >= 4) fprintf ( stderr, "        sort initialise ...\n" );
    for (i = 0; i < NUM_OVERSHOOT_BYTES; i++)
@@ -2602,7 +2613,9 @@ void df_sortIt ( UChar *block, Int32 last, Int32 *zptr,
 
    } else {
 
+     dump_block ("point2.block",block, last);
       numQSorted = 0;
+
       for (i = 0; i <= 255; i++) bigDone[i] = False;
 
       if (verbosity >= 4) fprintf ( stderr, "        bucket sorting ...\n" );
@@ -2635,7 +2648,7 @@ void df_sortIt ( UChar *block, Int32 last, Int32 *zptr,
          Calculate the running order, from smallest to largest
          big bucket.
       --*/
-
+      dump_array ("point1",zptr);
       for (i = 0; i <= 255; i++) runningOrder[i] = i;
 
       {
@@ -2661,6 +2674,8 @@ void df_sortIt ( UChar *block, Int32 last, Int32 *zptr,
       /*--
          The main sorting loop.
       --*/
+      dump_array ("bzip2.before", zptr);
+      
 
       for (i = 0; i <= 255; i++) {
 
@@ -2689,7 +2704,10 @@ void df_sortIt ( UChar *block, Int32 last, Int32 *zptr,
                   df_qSort3 ( block, last, zptr, quadrant, workDone_p, *workLimit_p, *firstAttempt_p, lo, hi, 2 );
                   numQSorted += ( hi - lo + 1 );
                   if (*workDone_p > *workLimit_p && *firstAttempt_p)
-		    return;
+		    {
+		      dump_array ("point10",zptr);
+		      return;
+		    }
                }
                ftab[sb] |= SETMASK;
             }
@@ -2742,6 +2760,9 @@ void df_sortIt ( UChar *block, Int32 last, Int32 *zptr,
 
          for (j = 0; j <= 255; j++) ftab[(j << 8) + ss] |= SETMASK;
       }
+
+      dump_array ("bzip2.after", zptr);
+
       if (verbosity >= 4)
          fprintf ( stderr, "        %d pointers, %d sorted, %d scanned\n",
 		   last+1, numQSorted, (last+1) - numQSorted );
@@ -2833,7 +2854,7 @@ Int32 rNums[512] = {
 /*---------------------------------------------------*/
 
 /*---------------------------------------------*/
-void randomiseBlock ( UChar *block, Bool *inUse )
+void randomiseBlock ( UChar *block, Bool *inUse , Int32 last)
 {
    Int32 i;
    RAND_DECLS;
@@ -2860,6 +2881,9 @@ Bool doReversibleTransformation ( UChar *block, Int32 last, Int32 *zptr, Int32 *
    Bool firstAttempt    = True;
    Bool blockRandomised = False;
 
+   dump_array ("doreversibletransformation.before",zptr);
+   dump_block ("point3",block,last);
+
    df_sortIt (block, last, zptr, &workDone, &workLimit, &firstAttempt);
 
    if (verbosity >= 3)
@@ -2869,7 +2893,7 @@ Bool doReversibleTransformation ( UChar *block, Int32 last, Int32 *zptr, Int32 *
    if (workDone > workLimit && firstAttempt) {
       if (verbosity >= 2)
          fprintf ( stderr, "    sorting aborted; randomising block\n" );
-      randomiseBlock (block, inUse);
+      randomiseBlock (block, inUse, last);
       workLimit = workDone = 0;
       blockRandomised = True;
       firstAttempt = False;
@@ -3355,7 +3379,9 @@ void compressStream ( FILE *stream, FILE *zStream )
       Bool  inUse[256];
       UInt32 origPtr;
 
+      dump_block ("point4", block, (n+1+NUM_OVERSHOOT_BYTES));
       loadAndRLEsource ( stream, inUse, block, &last );
+      dump_block ("point5", block, last);
 
       ERROR_IF_NOT_ZERO ( ferror(stream) );
       if (last == -1) break;
@@ -4728,3 +4754,4 @@ IntNative main ( IntNative argc, Char *argv[] )
 /*-----------------------------------------------------------*/
 /*--- end                                         bzip2.c ---*/
 /*-----------------------------------------------------------*/
+

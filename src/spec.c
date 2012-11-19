@@ -258,12 +258,12 @@ int spec_putc(unsigned char ch, int fd) {
     return ch;
 }
 
-#define MB (1)
+#define MB (1<<20)
 
 #ifdef SPEC_CPU2000
 int main (int argc, char *argv[]) {
     int i, level;
-    int input_size=64, compressed_size;
+    int input_size=4, compressed_size;
     char *input_name="input.combined";
     unsigned char *validate_array;
     seedi = 10;
@@ -394,3 +394,38 @@ int debug_time () {
     return 0;
 }
 #endif
+
+#define Int32   int
+#define UInt32  unsigned int
+#define Char    char
+#define UChar   unsigned char
+#define SIZE100K 100000
+
+void dump_block (const char *name, UChar* block, Int32 last)
+{
+   #undef fopen
+   #undef fwrite
+   #undef fclose
+   FILE *file = fopen (name,"w");
+   int iii;
+   for (iii = 0; iii < last; ++iii)
+     fprintf (file, "%d\n", block[iii]);
+   fclose(file);
+#define fopen(x) 0
+#define fclose(x) 0
+}
+
+void dump_array (const char *name, Int32 *zptr)
+{
+   #undef fopen
+   #undef fwrite
+   #undef fclose
+   FILE *file = fopen (name,"w");
+   int iii;
+   for (iii = 0; iii < SIZE100K*blockSize100k; ++iii)
+     fprintf (file, "%d\n", zptr[iii]);
+   fclose(file);
+#define fopen(x) 0
+#define fclose(x) 0
+}
+
