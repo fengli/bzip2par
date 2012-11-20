@@ -245,6 +245,7 @@
 
 void dump_array (const char *, Int32 *);
 void dump_block (const char *, UChar *, Int32);
+
 #if BZ_LCCWIN32
    #include <io.h>
    #include <fcntl.h>
@@ -2562,8 +2563,6 @@ void sortIt ( void )
          for (j = 0; j <= 255; j++) ftab[(j << 8) + ss] |= SETMASK;
       }
       
-      dump_array("bzip2.after", zptr);
-      
       if (verbosity >= 4)
          fprintf ( stderr, "        %d pointers, %d sorted, %d scanned\n",
                            last+1, numQSorted, (last+1) - numQSorted );
@@ -2588,7 +2587,6 @@ void df_sortIt ( UChar *block, Int32 last, Int32 *zptr,
       from 0 to last+NUM_OVERSHOOT_BYTES inclusive.  First,
       set up the overshoot area for block.
    --*/
-   dump_block ("point7",block,last);
 
    if (verbosity >= 4) fprintf ( stderr, "        sort initialise ...\n" );
    for (i = 0; i < NUM_OVERSHOOT_BYTES; i++)
@@ -2612,8 +2610,6 @@ void df_sortIt ( UChar *block, Int32 last, Int32 *zptr,
       if (verbosity >= 4) fprintf ( stderr, "        simpleSort done.\n" );
 
    } else {
-
-     dump_block ("point2.block",block, last);
       numQSorted = 0;
 
       for (i = 0; i <= 255; i++) bigDone[i] = False;
@@ -2648,7 +2644,6 @@ void df_sortIt ( UChar *block, Int32 last, Int32 *zptr,
          Calculate the running order, from smallest to largest
          big bucket.
       --*/
-      dump_array ("point1",zptr);
       for (i = 0; i <= 255; i++) runningOrder[i] = i;
 
       {
@@ -2674,8 +2669,6 @@ void df_sortIt ( UChar *block, Int32 last, Int32 *zptr,
       /*--
          The main sorting loop.
       --*/
-      dump_array ("bzip2.before", zptr);
-      
 
       for (i = 0; i <= 255; i++) {
 
@@ -2705,7 +2698,6 @@ void df_sortIt ( UChar *block, Int32 last, Int32 *zptr,
                   numQSorted += ( hi - lo + 1 );
                   if (*workDone_p > *workLimit_p && *firstAttempt_p)
 		    {
-		      dump_array ("point10",zptr);
 		      return;
 		    }
                }
@@ -2760,8 +2752,6 @@ void df_sortIt ( UChar *block, Int32 last, Int32 *zptr,
 
          for (j = 0; j <= 255; j++) ftab[(j << 8) + ss] |= SETMASK;
       }
-
-      dump_array ("bzip2.after", zptr);
 
       if (verbosity >= 4)
          fprintf ( stderr, "        %d pointers, %d sorted, %d scanned\n",
@@ -2880,9 +2870,6 @@ Bool doReversibleTransformation ( UChar *block, Int32 last, Int32 *zptr, Int32 *
    Int32 workDone        = 0;
    Bool firstAttempt    = True;
    Bool blockRandomised = False;
-
-   dump_array ("doreversibletransformation.before",zptr);
-   dump_block ("point3",block,last);
 
    df_sortIt (block, last, zptr, &workDone, &workLimit, &firstAttempt);
 
@@ -3379,9 +3366,7 @@ void compressStream ( FILE *stream, FILE *zStream )
       Bool  inUse[256];
       UInt32 origPtr;
 
-      dump_block ("point4", block, (n+1+NUM_OVERSHOOT_BYTES));
       loadAndRLEsource ( stream, inUse, block, &last );
-      dump_block ("point5", block, last);
 
       ERROR_IF_NOT_ZERO ( ferror(stream) );
       if (last == -1) break;
