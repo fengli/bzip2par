@@ -245,6 +245,7 @@
 
 void dump_array (const char *, Int32 *);
 void dump_block (const char *, UChar *, Int32);
+
 #if BZ_LCCWIN32
    #include <io.h>
    #include <fcntl.h>
@@ -2562,8 +2563,6 @@ void sortIt ( void )
          for (j = 0; j <= 255; j++) ftab[(j << 8) + ss] |= SETMASK;
       }
       
-      dump_array("bzip2.after", zptr);
-      
       if (verbosity >= 4)
          fprintf ( stderr, "        %d pointers, %d sorted, %d scanned\n",
                            last+1, numQSorted, (last+1) - numQSorted );
@@ -2588,7 +2587,6 @@ void df_sortIt ( UChar *block, Int32 last, Int32 *zptr,
       from 0 to last+NUM_OVERSHOOT_BYTES inclusive.  First,
       set up the overshoot area for block.
    --*/
-   dump_block ("point7",block,last);
 
    if (verbosity >= 4) fprintf ( stderr, "        sort initialise ...\n" );
    for (i = 0; i < NUM_OVERSHOOT_BYTES; i++)
@@ -2612,8 +2610,6 @@ void df_sortIt ( UChar *block, Int32 last, Int32 *zptr,
       if (verbosity >= 4) fprintf ( stderr, "        simpleSort done.\n" );
 
    } else {
-
-     dump_block ("point2.block",block, last);
       numQSorted = 0;
 
       for (i = 0; i <= 255; i++) bigDone[i] = False;
@@ -2648,7 +2644,6 @@ void df_sortIt ( UChar *block, Int32 last, Int32 *zptr,
          Calculate the running order, from smallest to largest
          big bucket.
       --*/
-      dump_array ("point1",zptr);
       for (i = 0; i <= 255; i++) runningOrder[i] = i;
 
       {
@@ -2674,8 +2669,6 @@ void df_sortIt ( UChar *block, Int32 last, Int32 *zptr,
       /*--
          The main sorting loop.
       --*/
-      dump_array ("bzip2.before", zptr);
-      
 
       for (i = 0; i <= 255; i++) {
 
@@ -2705,7 +2698,6 @@ void df_sortIt ( UChar *block, Int32 last, Int32 *zptr,
                   numQSorted += ( hi - lo + 1 );
                   if (*workDone_p > *workLimit_p && *firstAttempt_p)
 		    {
-		      dump_array ("point10",zptr);
 		      return;
 		    }
                }
@@ -2760,8 +2752,6 @@ void df_sortIt ( UChar *block, Int32 last, Int32 *zptr,
 
          for (j = 0; j <= 255; j++) ftab[(j << 8) + ss] |= SETMASK;
       }
-
-      dump_array ("bzip2.after", zptr);
 
       if (verbosity >= 4)
          fprintf ( stderr, "        %d pointers, %d sorted, %d scanned\n",
@@ -2880,9 +2870,6 @@ Bool doReversibleTransformation ( UChar *block, Int32 last, Int32 *zptr, Int32 *
    Int32 workDone        = 0;
    Bool firstAttempt    = True;
    Bool blockRandomised = False;
-
-   dump_array ("doreversibletransformation.before",zptr);
-   dump_block ("point3",block,last);
 
    df_sortIt (block, last, zptr, &workDone, &workLimit, &firstAttempt);
 
@@ -3385,11 +3372,11 @@ void compressStream ( FILE *stream, FILE *zStream )
       block++;
 
       Bool  inUse[256];
+      Bool  *_inUse = &inUse;
       UInt32 origPtr;
+      Uint32 *origPtr_p = &origPtr;
 
-      dump_block ("point4", block, (n+1+NUM_OVERSHOOT_BYTES));
       loadAndRLEsource ( stream, inUse, block, &last );
-      dump_block ("point5", block, last);
 
       ERROR_IF_NOT_ZERO ( ferror(stream) );
       if (last == -1) break;
@@ -3407,22 +3394,25 @@ void compressStream ( FILE *stream, FILE *zStream )
       serializer = 0;
 
 #pragma omp task output (streams1[blockNo] << x_out)  \
-  firstprivate (block, last, zptr, origPtr, inUse)
+  firstprivate (block, last, zptr, origPtr_p, inUse_p)
 {      
       /*-- sort the block and establish posn of original string --*/
-      blockRandomised = doReversibleTransformation (block, last, zptr, &origPtr, inUse);
-      /*--
-        A 6-byte block header, the value chosen arbitrarily
-        as 0x314159265359 :-).  A 32 bit value does not really
-        give a strong enough guarantee that the value will not
-        appear by chance in the compressed datastream.  Worst-case
-        probability of this event, for a 900k block, is about
-        2.0e-3 for 32 bits, 1.0e-5 for 40 bits and 4.0e-8 for 48 bits.
-        For a compressed file of size 100Gb -- about 100000 blocks --
-        only a 48-bit marker will do.  NB: normal compression/
-        decompression do *not* rely on these statistical properties.
-        They are only important when trying to recover blocks from
-        damaged files.
+      blockRandomised = doReversibleTransformation (block, last, zptr, origPtr_p, *inUse_p);
+}
+      /*-- Finally, block's contents proper. --*/
+      /* moveToFrontCodeAndSend (block, last, szptr, origPtr, inUse); */
+#pragma omp task input (serializer >> ser_in, streams1[blockNo] >> y_in) output (serializer << ser_out) \
+  firstprivate (block, last, szptr, *origPtr_p, inUse_p)
+{ 
+      Int32 mtfFreq[MAX_ALPHA_SIZE];
+      Int32 nMTF;
+      Int32 nInUse;
+
+      debug ("generateMTFValues start");
+      generateMTFValues(block, last, szptr, *inUse_p, &nInUse, mtfFreq, &nMTF);
+      debug ("generateMTFValues end");
+
+      /*--block header
       --*/
       bsPutUChar ( 0x31 ); bsPutUChar ( 0x41 );
       bsPutUChar ( 0x59 ); bsPutUChar ( 0x26 );
@@ -3436,12 +3426,11 @@ void compressStream ( FILE *stream, FILE *zStream )
          bsW(1,1); nBlocksRandomised++;
       } else
          bsW(1,0);
- }
-#pragma omp task input (serializer >> ser_in, streams1[blockNo] >> y_in) output (serializer << ser_out) \
-  firstprivate (block, last, szptr, origPtr, inUse) shared (zStream)
- { 
-      /*-- Finally, block's contents proper. --*/
-      moveToFrontCodeAndSend (block, last, szptr, origPtr, inUse);
+
+      bsPutIntVS ( 24, origPtr );      
+      
+      sendMTFValues(szptr, &nMTF, nInUse, inUse);
+      debug ("moveToFrontCodeAndSend end");
 
       ERROR_IF_NOT_ZERO ( ferror(zStream) );
  }      
