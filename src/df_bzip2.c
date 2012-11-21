@@ -3372,7 +3372,7 @@ void compressStream ( FILE *stream, FILE *zStream )
       block++;
 
       Bool  inUse[256];
-      Bool  *inUse_p = &inUse;
+      Bool  *inUse_p = inUse;
       UInt32 origPtr;
       UInt32 *origPtr_p = &origPtr;
 
@@ -3397,7 +3397,7 @@ void compressStream ( FILE *stream, FILE *zStream )
   firstprivate (block, last, zptr, origPtr_p, inUse_p)
 {      
       /*-- sort the block and establish posn of original string --*/
-      blockRandomised = doReversibleTransformation (block, last, zptr, origPtr_p, *inUse_p);
+      blockRandomised = doReversibleTransformation (block, last, zptr, origPtr_p, inUse_p);
 }
       /*-- Finally, block's contents proper. --*/
       /* moveToFrontCodeAndSend (block, last, szptr, origPtr, inUse); */
@@ -3409,7 +3409,7 @@ void compressStream ( FILE *stream, FILE *zStream )
       Int32 nInUse;
 
       debug ("generateMTFValues start");
-      generateMTFValues(block, last, szptr, *inUse_p, &nInUse, mtfFreq, &nMTF);
+      generateMTFValues(block, last, szptr, inUse_p, &nInUse, mtfFreq, &nMTF);
       debug ("generateMTFValues end");
 
       /*--block header
@@ -3429,7 +3429,7 @@ void compressStream ( FILE *stream, FILE *zStream )
 
       bsPutIntVS ( 24, *origPtr_p );      
       
-      sendMTFValues(szptr, &nMTF, nInUse, inUse);
+      sendMTFValues(szptr, &nMTF, nInUse, inUse_p);
       debug ("moveToFrontCodeAndSend end");
 
       ERROR_IF_NOT_ZERO ( ferror(zStream) );
