@@ -3383,18 +3383,18 @@ void compressStream ( FILE *stream, FILE *zStream )
       /*-- sort the block and establish posn of original string --*/
       blockRandomised = doReversibleTransformation (block, last, zptr, &origPtr, inUse);
 
-      /*--
-        A 6-byte block header, the value chosen arbitrarily
-        as 0x314159265359 :-).  A 32 bit value does not really
-        give a strong enough guarantee that the value will not
-        appear by chance in the compressed datastream.  Worst-case
-        probability of this event, for a 900k block, is about
-        2.0e-3 for 32 bits, 1.0e-5 for 40 bits and 4.0e-8 for 48 bits.
-        For a compressed file of size 100Gb -- about 100000 blocks --
-        only a 48-bit marker will do.  NB: normal compression/
-        decompression do *not* rely on these statistical properties.
-        They are only important when trying to recover blocks from
-        damaged files.
+      /*-- Finally, block's contents proper. --*/
+      /* moveToFrontCodeAndSend (block, last, szptr, origPtr, inUse); */
+
+      Int32 mtfFreq[MAX_ALPHA_SIZE];
+      Int32 nMTF;
+      Int32 nInUse;
+
+      debug ("generateMTFValues start");
+      generateMTFValues(block, last, szptr, inUse, &nInUse, mtfFreq, &nMTF);
+      debug ("generateMTFValues end");
+
+      /*--block header
       --*/
       bsPutUChar ( 0x31 ); bsPutUChar ( 0x41 );
       bsPutUChar ( 0x59 ); bsPutUChar ( 0x26 );
@@ -3409,8 +3409,10 @@ void compressStream ( FILE *stream, FILE *zStream )
       } else
          bsW(1,0);
 
-      /*-- Finally, block's contents proper. --*/
-      moveToFrontCodeAndSend (block, last, szptr, origPtr, inUse);
+      bsPutIntVS ( 24, origPtr );      
+      
+      sendMTFValues(szptr, &nMTF, nInUse, inUse);
+      debug ("moveToFrontCodeAndSend end");
 
       ERROR_IF_NOT_ZERO ( ferror(zStream) );
    }
