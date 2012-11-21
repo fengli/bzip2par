@@ -3372,9 +3372,9 @@ void compressStream ( FILE *stream, FILE *zStream )
       block++;
 
       Bool  inUse[256];
-      Bool  *_inUse = &inUse;
+      Bool  *inUse_p = &inUse;
       UInt32 origPtr;
-      Uint32 *origPtr_p = &origPtr;
+      UInt32 *origPtr_p = &origPtr;
 
       loadAndRLEsource ( stream, inUse, block, &last );
 
@@ -3402,7 +3402,7 @@ void compressStream ( FILE *stream, FILE *zStream )
       /*-- Finally, block's contents proper. --*/
       /* moveToFrontCodeAndSend (block, last, szptr, origPtr, inUse); */
 #pragma omp task input (serializer >> ser_in, streams1[blockNo] >> y_in) output (serializer << ser_out) \
-  firstprivate (block, last, szptr, *origPtr_p, inUse_p)
+  firstprivate (block, last, szptr, origPtr_p, inUse_p)
 { 
       Int32 mtfFreq[MAX_ALPHA_SIZE];
       Int32 nMTF;
@@ -3427,7 +3427,7 @@ void compressStream ( FILE *stream, FILE *zStream )
       } else
          bsW(1,0);
 
-      bsPutIntVS ( 24, origPtr );      
+      bsPutIntVS ( 24, *origPtr_p );      
       
       sendMTFValues(szptr, &nMTF, nInUse, inUse);
       debug ("moveToFrontCodeAndSend end");
