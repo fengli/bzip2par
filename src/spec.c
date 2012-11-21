@@ -35,6 +35,7 @@ int spec_putc(unsigned char ch, int fd);
 int debug_time();
 
 #define DEBUG 1
+#define DEBUG_DUMP 1
 
 #ifdef DEBUG
 int dbglvl=4;
@@ -266,6 +267,7 @@ int main (int argc, char *argv[]) {
     int input_size=4, compressed_size;
     char *input_name="input.combined";
     unsigned char *validate_array;
+    FILE *fd;
     seedi = 10;
 
     if (argc > 1) input_name=argv[1];
