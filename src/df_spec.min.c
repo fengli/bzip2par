@@ -15,7 +15,7 @@
 
 #define Bool unsigned char
 /* Prototypes for stuff in bzip2.c */
-void compressStream ( int zStream, int stream, int outerstream );
+void compressStream ( int zStream, int stream, int outerstream __attribute__((stream_ref)));
 void allocateCompressStructures ( void );
 /* Prototypes for stuff in spec.c */
 void spec_initbufs();
@@ -58,7 +58,6 @@ struct spec_fd_t {
     int pos;
     unsigned char *buf;
 } spec_fd[MAX_SPEC_FD];
-struct spec_fd_t *spec_fd_p = spec_fd;
 
 long int seedi;
 double ran()
@@ -306,6 +305,7 @@ int main (int argc, char *argv[]) {
 
     spec_initbufs();
 
+    struct spec_fd_t *spec_fd_p = spec_fd;
        int outerstream __attribute__ ((stream));
        int outer_in;
        level = 7;

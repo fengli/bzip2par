@@ -2255,7 +2255,13 @@ void compressStream ( FILE *stream, FILE *zStream, int outerstream)
    int streams3[N_STREAM] __attribute__ ((stream));
 
    int x_in, x_out, y_in, y_out, z_in, z_out, outer_out, ser_in, ser_out;
-   
+
+#pragma omp task output (serializer)
+   {
+     debug ("====>task 0 running\n");
+     serializer = 0;
+   }
+
    while (True) {
 
       blockNo++;
@@ -2290,16 +2296,16 @@ void compressStream ( FILE *stream, FILE *zStream, int outerstream)
       if (verbosity >= 2)
          fprintf ( stderr, "    block %d: crc = 0x%8x, combined CRC = 0x%8x, size = %d",
                            blockNo, blockCRC, combinedCRC, last+1 );
-#pragma omp task output (serializer)
-      serializer = 0;
 
-#pragma omp task output (streams1[blockNo] << x_out)  \
+#pragma omp task output (streams1[blockNo] << x_out)	\
   firstprivate (block, last, zptr, origPtr_p, inUse_p)
-{      
+{
+      debug1 ("====>task 1 running with block num:%d\n", blockNo);
       /*-- sort the block and establish posn of original string --*/
       
       blockRandomised = doReversibleTransformation (block, last, zptr, origPtr_p, inUse_p);
-}      
+      x_out = blockRandomised;
+}
 
       /*-- Finally, block's contents proper. --*/
 #pragma omp task input (serializer >> ser_in, streams1[blockNo] >> y_in) output (serializer << ser_out, streams2[blockNo] << y_out) \
@@ -2309,9 +2315,13 @@ void compressStream ( FILE *stream, FILE *zStream, int outerstream)
       Int32 nMTF;
       Int32 nInUse;
 
-      debug ("generateMTFValues start");
+      ser_out = ser_in;
+      y_out = y_in;
+
+      debug1 ("====>task 2 running with block num:%d\n", blockNo);
+      debug ("generateMTFValues start\n");
       generateMTFValues(block, last, szptr, inUse_p, &nInUse, mtfFreq, &nMTF);
-      debug ("generateMTFValues end");
+      debug ("generateMTFValues end\n");
 
       /*--block header
       --*/
@@ -2331,14 +2341,15 @@ void compressStream ( FILE *stream, FILE *zStream, int outerstream)
       bsPutIntVS ( 24, *origPtr_p );      
       
       sendMTFValues(szptr, mtfFreq, &nMTF, nInUse, inUse_p, last);
-      debug ("moveToFrontCodeAndSend end");
+      debug ("moveToFrontCodeAndSend end\n");
 
       ERROR_IF_NOT_ZERO ( ferror(zStream) );
    }
 }
 
 #pragma omp task input (streams2[blockNo] >> z_in) output(outerstream << outer_out) firstprivate (stream, zStream)
-{   
+{
+  debug1 ("====>task3 running with blockNo: %d",blockNo);
    if (verbosity >= 2 && nBlocksRandomised > 0)
       fprintf ( stderr, "    %d block%s needed randomisation\n", 
                         nBlocksRandomised,
