@@ -1,5 +1,13 @@
 #define SPEC_CPU2000
 
+#define DEBUG_ARRAY(str,A,n) do{		\
+  int im;                   \
+  printf (str);\
+  for (im=0;im<n;im++) \
+    printf ("%d,",A[im]);   \
+  printf ("\n"); \
+}while(0)
+
 /*-----------------------------------------------------------*/
 /*--- A block-sorting, lossless compressor        bzip2.c ---*/
 /*-----------------------------------------------------------*/
@@ -243,8 +251,8 @@
    #endif
 #endif
 
-void dump_array (const char *, Int32 *);
-void dump_block (const char *, UChar *, Int32);
+void dump_array (const char *, Int32 *, Int32);
+void dump_block (const char *, UChar *, Int32, Int32);
 
 #if BZ_LCCWIN32
    #include <io.h>
@@ -1041,6 +1049,7 @@ void hbCreateDecodeTables ( Int32 *limit,
 void df_makeMaps ( Int32 *nInUse, UChar *seqToUnseq, UChar *unseqToSeq, Bool *inUse )
 {
    Int32 i;
+
    *nInUse = 0;
    for (i = 0; i < 256; i++)
       if (inUse[i]) {
@@ -1065,6 +1074,8 @@ void generateMTFValues ( UChar *block, Int32 last, UInt16* szptr, Bool *inUse,
    UChar unseqToSeq[256]={0};
    Int32 *zptr = (Int32 *) szptr;
 
+   debug1 ("---->in generateMTFValue: nInUse_p:0x%x\n", nInUse);
+
    df_makeMaps(nInUse, seqToUnseq, unseqToSeq, inUse);
    EOB = *nInUse+1;
 
@@ -1082,6 +1093,7 @@ void generateMTFValues ( UChar *block, Int32 last, UInt16* szptr, Bool *inUse,
       #endif
 
       ll_i = unseqToSeq[block[zptr[i] - 1]];
+
       #if DEBUG
          assert (ll_i < *nInUse);
       #endif
@@ -2278,15 +2290,17 @@ void compressStream ( FILE *stream, FILE *zStream, int outerstream)
       UInt16 *szptr   = (UInt16 *)zptr;
       block++;
 
-      Bool  inUse[256];
-      Bool inUse_p = inUse;
+      Bool *inUse_p = malloc (256*sizeof(Bool));
       Int32 origPtr;
-      Int32 *origPtr_p = &origPtr;
-      
-      loadAndRLEsource ( stream, inUse, block, &last );
+      Int32 *origPtr_p = malloc (1*sizeof (origPtr));
+
+      loadAndRLEsource ( stream, inUse_p, block, &last );
 
       ERROR_IF_NOT_ZERO ( ferror(stream) );
       if (last == -1) break;
+
+      debug1 ("last:%d\n",last);
+      dump_block ("block.point1.df", block, last, blockNo);
 
       blockCRC = ~globalCrc;
 
@@ -2302,8 +2316,13 @@ void compressStream ( FILE *stream, FILE *zStream, int outerstream)
 {
       debug1 ("====>task 1 running with block num:%d\n", blockNo);
       /*-- sort the block and establish posn of original string --*/
-      
+
+      debug1 ("before:origPtr:%d\n", *origPtr_p);
       blockRandomised = doReversibleTransformation (block, last, zptr, origPtr_p, inUse_p);
+      debug1 ("after:origPtr:%d\n", *origPtr_p);
+
+      dump_array ("point1.df", zptr, blockNo);
+
       x_out = blockRandomised;
 }
 
@@ -2320,6 +2339,10 @@ void compressStream ( FILE *stream, FILE *zStream, int outerstream)
 
       debug1 ("====>task 2 running with block num:%d\n", blockNo);
       debug ("generateMTFValues start\n");
+
+      dump_array ("point2.df", zptr, blockNo);
+
+      debug1 ("--->nInUse_p:0x%x\n", &nInUse);
       generateMTFValues(block, last, szptr, inUse_p, &nInUse, mtfFreq, &nMTF);
       debug ("generateMTFValues end\n");
 
@@ -2333,12 +2356,15 @@ void compressStream ( FILE *stream, FILE *zStream, int outerstream)
       bsPutUInt32 ( blockCRC );
 
       /*-- Now a single bit indicating randomisation. --*/
-      if (blockRandomised) {
+      if (y_in) {
          bsW(1,1); nBlocksRandomised++;
       } else
          bsW(1,0);
 
       bsPutIntVS ( 24, *origPtr_p );      
+
+      debug1 ("===>zptr:0x%x\n",zptr);
+      dump_array ("point3.df", zptr, blockNo);
       
       sendMTFValues(szptr, mtfFreq, &nMTF, nInUse, inUse_p, last);
       debug ("moveToFrontCodeAndSend end\n");
@@ -2347,9 +2373,9 @@ void compressStream ( FILE *stream, FILE *zStream, int outerstream)
    }
 }
 
-#pragma omp task input (streams2[blockNo] >> z_in) output(outerstream << outer_out) firstprivate (stream, zStream)
+#pragma omp task input (streams2[blockNo-1] >> z_in) output(outerstream << outer_out) firstprivate (stream, zStream)
 {
-  debug1 ("====>task3 running with blockNo: %d",blockNo);
+  debug1 ("====>task3 running with blockNo: %d\n",blockNo);
    if (verbosity >= 2 && nBlocksRandomised > 0)
       fprintf ( stderr, "    %d block%s needed randomisation\n", 
                         nBlocksRandomised,

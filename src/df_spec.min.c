@@ -263,7 +263,7 @@ int spec_putc(unsigned char ch, int fd) {
 #ifdef SPEC_CPU2000
 int main (int argc, char *argv[]) {
     int i, level;
-    int input_size=4, compressed_size;
+    int input_size=24, compressed_size;
     char *input_name="input.combined";
     unsigned char *validate_array;
     FILE *fd;
@@ -318,6 +318,7 @@ int main (int argc, char *argv[]) {
 #pragma omp task input (outerstream >> outer_in) firstprivate (spec_fd_p, level)
 {    
 
+  debug (1,"finishing task...\n");
 	debug_time();
 	debug1(3, "Compressed data %d bytes in length\n", spec_fd_p[1].len);
 
@@ -373,12 +374,14 @@ int debug_time () {
 #define UChar   unsigned char
 #define SIZE100K 100000
 
-void dump_block (const char *name, UChar* block, Int32 last)
+void dump_block (const char *name, UChar* block, Int32 last, Int32 blockNo)
 {
    #undef fopen
    #undef fwrite
    #undef fclose
-   FILE *file = fopen (name,"w");
+  char newname[256];
+  sprintf (newname, "%d.%s", blockNo, name);
+   FILE *file = fopen (newname,"w");
    int iii;
    for (iii = 0; iii < last; ++iii)
      fprintf (file, "%d\n", block[iii]);
@@ -387,12 +390,14 @@ void dump_block (const char *name, UChar* block, Int32 last)
 #define fclose(x) 0
 }
 
-void dump_array (const char *name, Int32 *zptr)
+void dump_array (const char *name, Int32 *zptr, Int32 blockNo)
 {
    #undef fopen
    #undef fwrite
    #undef fclose
-   FILE *file = fopen (name,"w");
+  char newname[256];
+  sprintf (newname, "%d.%s", blockNo, name);
+   FILE *file = fopen (newname,"w");
    int iii;
    for (iii = 0; iii < SIZE100K*blockSize100k; ++iii)
      fprintf (file, "%d\n", zptr[iii]);
