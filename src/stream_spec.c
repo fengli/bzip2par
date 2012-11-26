@@ -2,20 +2,21 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <fcntl.h>
-#ifdef TIMING_OUTPUT
+#include "common.h"
 #include <time.h>
 #include <sys/time.h>
-#endif
 #include <string.h>
 
 #define SPEC_CPU2000
 #define SPEC_BZIP
 
+struct timeval tv1,tv2;
+
 #define  IM_SPEC_ALREADY
 
 #define Bool unsigned char
 /* Prototypes for stuff in bzip2.c */
-void compressStream ( int zStream, int stream );
+void compressStream ( int zStream, int stream, int outerstream __attribute__((stream_ref)));
 void allocateCompressStructures ( void );
 /* Prototypes for stuff in spec.c */
 void spec_initbufs();
@@ -31,9 +32,9 @@ int spec_reset(int fd);
 int spec_write(int fd, unsigned char *buf, int size);
 int spec_putc(unsigned char ch, int fd);
 int debug_time();
+extern int     workFactor, blockSize100k;
 
-#define DEBUG 1
-#define DEBUG_DUMP 1
+//#define DEBUG 0
 
 #ifdef DEBUG
 int dbglvl=4;
@@ -262,7 +263,7 @@ int spec_putc(unsigned char ch, int fd) {
 #ifdef SPEC_CPU2000
 int main (int argc, char *argv[]) {
     int i, level;
-    int input_size=4, compressed_size;
+    int input_size=INPUT_SIZE, compressed_size;
     char *input_name="input.combined";
     unsigned char *validate_array;
     FILE *fd;
@@ -280,7 +281,6 @@ int main (int argc, char *argv[]) {
     spec_fd[2].limit=input_size*MB;
     spec_init();
 
-    debug_time();
     debug(2, "Loading Input Data\n");
     spec_load(0, input_name, input_size*MB);
     debug1(3, "Input data %d bytes in length\n", spec_fd[0].len);
@@ -304,28 +304,40 @@ int main (int argc, char *argv[]) {
 
     spec_initbufs();
 
-    for (level=7; level <= 7; level += 2) {
-	debug_time();
+    struct spec_fd_t *spec_fd_p = spec_fd;
+       int outerstream __attribute__ ((stream));
+       int outer_in;
+       level = 7;
 	debug1(2, "Compressing Input Data, level %d\n", level);
 
-	spec_compress(0,1, level);
+	blockSize100k           = level;
 
-	debug_time();
-	debug1(3, "Compressed data %d bytes in length\n", spec_fd[1].len);
+	gettimeofday (&tv1, NULL);
+
+	compressStream ( 0, 1, outerstream);
+	
+#pragma omp task input (outerstream >> outer_in) firstprivate (spec_fd_p, level)
+{    
+
+  gettimeofday (&tv2,NULL);
+  printf ("[bzip2-parallel] with compress %dMB data in %f seconds\n", input_size, tdiff(&tv2,&tv1));
+
+  debug (1,"finishing task...\n");
+  debug1(3, "Compressed data %d bytes in length\n", spec_fd_p[1].len);
 
 #ifdef DEBUG_DUMP
 	{
 	    char buf[256];
 	    sprintf(buf, "out.compress.%d", level);
 	    fd = open (buf, O_RDWR|O_CREAT, 0644);
-	    write(fd, spec_fd[1].buf, spec_fd[1].len);
+	    write(fd, spec_fd_p[1].buf, spec_fd_p[1].len);
 	    close(fd);
 	}
 #endif
 
 	spec_reset(1);
 	spec_rewind(0);
-    }
+}
 
     return 0;
 }
@@ -334,17 +346,13 @@ int main (int argc, char *argv[]) {
 extern unsigned char smallMode;
 extern int     verbosity;
 extern int     bsStream;
-extern int     workFactor, blockSize100k;
+
 void spec_initbufs() {
    smallMode               = 0;
    verbosity               = 0;
    blockSize100k           = 9;
    bsStream                = 0;
    workFactor              = 30;
-}
-void spec_compress(int in, int out, int lev) {
-    blockSize100k           = lev;
-    compressStream ( in, out );
 }
 
 #else
@@ -369,31 +377,39 @@ int debug_time () {
 #define UChar   unsigned char
 #define SIZE100K 100000
 
-void dump_block (const char *name, UChar* block, Int32 last)
+void dump_block (const char *name, UChar* block, Int32 last, Int32 blockNo)
 {
+  #ifdef DEBUG
    #undef fopen
    #undef fwrite
    #undef fclose
-   FILE *file = fopen (name,"w");
+  char newname[256];
+  sprintf (newname, "%d.%s", blockNo, name);
+   FILE *file = fopen (newname,"w");
    int iii;
    for (iii = 0; iii < last; ++iii)
      fprintf (file, "%d\n", block[iii]);
    fclose(file);
 #define fopen(x) 0
 #define fclose(x) 0
+  #endif
 }
 
-void dump_array (const char *name, Int32 *zptr)
+void dump_array (const char *name, Int32 *zptr, Int32 blockNo)
 {
+  #ifdef DEBUG
    #undef fopen
    #undef fwrite
    #undef fclose
-   FILE *file = fopen (name,"w");
+  char newname[256];
+  sprintf (newname, "%d.%s", blockNo, name);
+   FILE *file = fopen (newname,"w");
    int iii;
    for (iii = 0; iii < SIZE100K*blockSize100k; ++iii)
      fprintf (file, "%d\n", zptr[iii]);
    fclose(file);
 #define fopen(x) 0
 #define fclose(x) 0
+   #endif
 }
 

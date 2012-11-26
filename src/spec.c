@@ -2,16 +2,18 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <fcntl.h>
-#ifdef TIMING_OUTPUT
+#include "common.h"
+
 #include <time.h>
 #include <sys/time.h>
-#endif
 #include <string.h>
 
 #define SPEC_CPU2000
 #define SPEC_BZIP
 
 #define  IM_SPEC_ALREADY
+
+struct timeval tv1,tv2;
 
 #define Bool unsigned char
 /* Prototypes for stuff in bzip2.c */
@@ -33,9 +35,6 @@ int spec_reset(int fd);
 int spec_write(int fd, unsigned char *buf, int size);
 int spec_putc(unsigned char ch, int fd);
 int debug_time();
-
-#define DEBUG 1
-#define DEBUG_DUMP 1
 
 #ifdef DEBUG
 int dbglvl=4;
@@ -264,7 +263,7 @@ int spec_putc(unsigned char ch, int fd) {
 #ifdef SPEC_CPU2000
 int main (int argc, char *argv[]) {
     int i, level;
-    int input_size=4, compressed_size;
+    int input_size=INPUT_SIZE, compressed_size;
     char *input_name="input.combined";
     unsigned char *validate_array;
     FILE *fd;
@@ -282,7 +281,7 @@ int main (int argc, char *argv[]) {
     spec_fd[2].limit=input_size*MB;
     spec_init();
 
-    debug_time();
+    //debug_time();
     debug(2, "Loading Input Data\n");
     spec_load(0, input_name, input_size*MB);
     debug1(3, "Input data %d bytes in length\n", spec_fd[0].len);
@@ -307,13 +306,15 @@ int main (int argc, char *argv[]) {
     spec_initbufs();
 
     for (level=7; level <= 7; level += 2) {
-	debug_time();
+      /* Timer start. */
+      gettimeofday(&tv1,NULL);
 	debug1(2, "Compressing Input Data, level %d\n", level);
 
 	spec_compress(0,1, level);
 
-	debug_time();
-	debug1(3, "Compressed data %d bytes in length\n", spec_fd[1].len);
+      gettimeofday(&tv2,NULL);
+      printf ("[bzip2-serial] with compress %dMB data in %f seconds\n", input_size, tdiff(&tv2,&tv1));
+      debug1(3, "Compressed data %d bytes in length\n", spec_fd[1].len);
 
 #ifdef DEBUG_DUMP
 	{
@@ -328,10 +329,10 @@ int main (int argc, char *argv[]) {
 	spec_reset(0);
 	spec_rewind(1);
 
-	debug_time();
+	//debug_time();
 	debug(2, "Uncompressing Data\n");
 	spec_uncompress(1,0, level);
-	debug_time();
+	//debug_time();
 	debug1(3, "Uncompressed data %d bytes in length\n", spec_fd[0].len);
 
 #ifdef DEBUG_DUMP
@@ -350,12 +351,12 @@ int main (int argc, char *argv[]) {
 		exit (1);
 	    }
 	}
-	debug_time();
+	//debug_time();
 	debug(3, "Uncompressed data compared correctly\n");
 	spec_reset(1);
 	spec_rewind(0);
     }
-    printf ("Tested %dMB buffer: OK!\n", input_size);
+    debug1(3,"Tested %dMB buffer: OK!\n", input_size);
 
     return 0;
 }
@@ -403,31 +404,38 @@ int debug_time () {
 #define UChar   unsigned char
 #define SIZE100K 100000
 
-void dump_block (const char *name, UChar* block, Int32 last)
+void dump_block (const char *name, UChar* block, Int32 last, Int32 blockNo)
 {
+  #ifdef DEBUG
    #undef fopen
    #undef fwrite
    #undef fclose
-   FILE *file = fopen (name,"w");
+  char newname[256];
+  sprintf (newname, "%d.%s", blockNo, name);
+   FILE *file = fopen (newname,"w");
    int iii;
    for (iii = 0; iii < last; ++iii)
      fprintf (file, "%d\n", block[iii]);
    fclose(file);
 #define fopen(x) 0
 #define fclose(x) 0
+   #endif
 }
 
-void dump_array (const char *name, Int32 *zptr)
+void dump_array (const char *name, Int32 *zptr, Int32 blockNo)
 {
+  #ifdef DEBUG
    #undef fopen
    #undef fwrite
    #undef fclose
-   FILE *file = fopen (name,"w");
+  char newname[256];
+  sprintf (newname, "%d.%s", blockNo, name);
+   FILE *file = fopen (newname,"w");
    int iii;
    for (iii = 0; iii < SIZE100K*blockSize100k; ++iii)
      fprintf (file, "%d\n", zptr[iii]);
    fclose(file);
 #define fopen(x) 0
 #define fclose(x) 0
+   #endif
 }
-

@@ -1,5 +1,5 @@
 #define SPEC_CPU2000
-
+#include "common.h"
 /*-----------------------------------------------------------*/
 /*--- A block-sorting, lossless compressor        bzip2.c ---*/
 /*-----------------------------------------------------------*/
@@ -348,18 +348,12 @@ int debug_time();
 #define IntNative int
 
 
-/*--
-   change to 1, or compile with -DDEBUG=1 to debug
---*/
-#ifndef DEBUG
-#define DEBUG 1
-#endif
-
 #ifdef DEBUG
 #define debug(str) {printf(str);};fflush(stdout)
 #define debug1(str,a) {printf(str,a);}fflush(stdout)
 #else
 #define debug(str)
+#define debug1(str,a)
 #endif
 
 /*---------------------------------------------------*/
@@ -526,6 +520,8 @@ void*   myMalloc ( Int32 );
   The structures are always set to be suitable
   for a block of size 100000 * blockSize100k.
 --*/
+Int32      blockNo;
+
 UChar    *block;    /*-- compress   --*/
 UInt16   *quadrant; /*-- compress   --*/
 Int32    *zptr;     /*-- compress   --*/ 
@@ -1612,7 +1608,13 @@ void sendMTFValues ( void )
 void moveToFrontCodeAndSend ( void )
 {
    bsPutIntVS ( 24, origPtr );
+
+   dump_array ("point2", zptr, blockNo);
+   
    generateMTFValues();
+
+   dump_array ("point3", zptr, blockNo);
+   
    sendMTFValues();
 }
 
@@ -2864,7 +2866,6 @@ void compressStream ( FILE *stream, FILE *zStream )
 {
    IntNative  retVal;
    UInt32     blockCRC, combinedCRC;
-   Int32      blockNo;
 
    blockNo  = 0;
    bytesIn  = 0;
@@ -2897,9 +2898,12 @@ void compressStream ( FILE *stream, FILE *zStream )
       blockNo++;
       initialiseCRC ();
       loadAndRLEsource ( stream );
+
       ERROR_IF_NOT_ZERO ( ferror(stream) );
       if (last == -1) break;
 
+      dump_block ("block.point1", block, last, blockNo);
+      
       blockCRC = getFinalCRC ();
       combinedCRC = (combinedCRC << 1) | (combinedCRC >> 31);
       combinedCRC ^= blockCRC;
@@ -2909,7 +2913,10 @@ void compressStream ( FILE *stream, FILE *zStream )
                            blockNo, blockCRC, combinedCRC, last+1 );
 
       /*-- sort the block and establish posn of original string --*/
+
+      debug1 ("last:%d\n",last);
       doReversibleTransformation ();
+      dump_array ("point1", zptr, blockNo);
 
       /*--
         A 6-byte block header, the value chosen arbitrarily
@@ -2938,6 +2945,7 @@ void compressStream ( FILE *stream, FILE *zStream )
          bsW(1,0);
 
       /*-- Finally, block's contents proper. --*/
+      
       moveToFrontCodeAndSend ();
 
       ERROR_IF_NOT_ZERO ( ferror(zStream) );

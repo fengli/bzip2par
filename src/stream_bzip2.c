@@ -1,4 +1,5 @@
 #define SPEC_CPU2000
+#include "common.h"
 
 #define DEBUG_ARRAY(str,A,n) do{		\
   int im;                   \
@@ -358,15 +359,12 @@ int debug_time();
 /*--
    change to 1, or compile with -DDEBUG=1 to debug
 --*/
-#ifndef DEBUG
-#define DEBUG 1
-#endif
-
 #ifdef DEBUG
 #define debug(str) {printf(str);};fflush(stdout)
 #define debug1(str,a) {printf(str,a);}fflush(stdout)
 #else
 #define debug(str)
+#define debug1(str,a)
 #endif
 
 /*---------------------------------------------------*/
