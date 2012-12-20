@@ -323,7 +323,9 @@ void dump_block (const char *, UChar *, Int32);
 #define False  0
 
 /* Prototypes for stuff in bzip2.c */
+Bool uncompressStream ( int zStream, int stream );
 void compressStream ( int stream, int zStream );
+void allocateCompressStructures ( void );
 /* Prototypes for stuff in spec.c */
 void spec_initbufs();
 void spec_compress(int in, int out, int level);
@@ -481,6 +483,7 @@ FILE    *outputHandleJustInCase;
 void    panic                 ( Char* )          NORETURN;
 void    ioError               ( void )           NORETURN;
 void    compressOutOfMemory   ( Int32, Int32 )   NORETURN;
+void    uncompressOutOfMemory ( Int32, Int32 )   NORETURN;
 void    blockOverrun          ( void )           NORETURN;
 void    badBlockHeader        ( void )           NORETURN;
 void    badBGLengths          ( void )           NORETURN;
@@ -511,6 +514,54 @@ void*   myMalloc ( Int32 );
 #define NUM_OVERSHOOT_BYTES 20
 
 /*--
+  These are the main data structures for
+  the Burrows-Wheeler transform.
+--*/
+
+/*--
+  Pointers to compression and decompression
+  structures.  Set by
+     allocateCompressStructures   and
+     setDecompressStructureSizes
+
+  The structures are always set to be suitable
+  for a block of size 100000 * blockSize100k.
+--*/
+
+UChar    *block;    /*-- compress   --*/
+UInt16   *quadrant; /*-- compress   --*/
+Int32    *zptr;     /*-- compress   --*/ 
+UInt16   *szptr;    /*-- overlays zptr ---*/
+Int32    *ftab;     /*-- compress   --*/
+
+UInt16   *ll16;     /*-- small decompress --*/
+UChar    *ll4;      /*-- small decompress --*/
+
+Int32    *tt;       /*-- fast decompress  --*/
+UChar    *ll8;      /*-- fast decompress  --*/
+
+
+/*--
+  freq table collected to save a pass over the data
+  during decompression.
+--*/
+Int32   unzftab[256];
+
+
+/*--
+   index of the last char in the block, so
+   the block size == last + 1.
+--*/
+Int32  last;
+
+
+/*--
+  index in zptr[] of original string after sorting.
+--*/
+Int32  origPtr;
+
+
+/*--
   always: in the range 0 .. 9.
   The current block size is 100000 * this number.
 --*/
@@ -533,6 +584,10 @@ Int32  workFactor;
 #else
 int    workFactor;		/* Used in sorting stage and input parameter.  */
 #endif
+Int32  workDone;		/* Used in sorting stage.  */
+Int32  workLimit;		/* Used in sorting stage.  */
+Bool   blockRandomised;
+Bool   firstAttempt;		/* Used in sorting stage.  */
 Int32  nBlocksRandomised;	/* Used after the sorting stage before the next stage.  */
 
 
@@ -552,6 +607,32 @@ Int32  nBlocksRandomised;	/* Used after the sorting stage before the next stage.
 #define N_ITERS  4
 
 #define MAX_SELECTORS (2 + (900000 / G_SIZE))
+
+Bool  inUse[256];
+Int32 nInUse;
+
+UChar seqToUnseq[256];
+UChar unseqToSeq[256];
+
+UChar selector   [MAX_SELECTORS];
+UChar selectorMtf[MAX_SELECTORS];
+
+Int32 nMTF;
+
+Int32 mtfFreq[MAX_ALPHA_SIZE];
+
+UChar len  [N_GROUPS][MAX_ALPHA_SIZE];
+
+/*-- decompress only --*/
+Int32 limit  [N_GROUPS][MAX_ALPHA_SIZE];
+Int32 base   [N_GROUPS][MAX_ALPHA_SIZE];
+Int32 perm   [N_GROUPS][MAX_ALPHA_SIZE];
+Int32 minLens[N_GROUPS];
+
+/*-- compress only --*/
+Int32  code [N_GROUPS][MAX_ALPHA_SIZE];
+Int32  rfreq[N_GROUPS][MAX_ALPHA_SIZE];
+
 
 /*---------------------------------------------------*/
 /*--- 32-bit CRC grunge                           ---*/
@@ -1033,6 +1114,117 @@ void hbCreateDecodeTables ( Int32 *limit,
    (((UInt32)ll16[i]) | (GET_LL4(i) << 16))
 
 
+/*---------------------------------------------*/
+/*--
+  Manage memory for compression/decompression.
+  When compressing, a single block size applies to
+  all files processed, and that's set when the
+  program starts.  But when decompressing, each file
+  processed could have been compressed with a
+  different block size, so we may have to free
+  and reallocate on a per-file basis.
+
+  A call with argument of zero means
+  `free up everything.'  And a value of zero for
+  blockSize100k means no memory is currently allocated.
+--*/
+
+
+/*---------------------------------------------*/
+void allocateCompressStructures ( void )
+{
+   Int32 n  = SIZE100K * blockSize100k;
+   block    = malloc ( (n + 1 + NUM_OVERSHOOT_BYTES) * sizeof(UChar) );
+
+   /* quadrant is used only when sorting, so this could be local.  */
+   quadrant = malloc ( (n     + NUM_OVERSHOOT_BYTES) * sizeof(Int16) );
+
+   /* zptr used in all 3 stages.  */
+   zptr     = malloc ( n                             * sizeof(Int32) );
+
+   /* Used only in SortIt. This could also be local.  */
+   ftab     = malloc ( 65537                         * sizeof(Int32) );
+   
+   if (block == NULL || quadrant == NULL ||
+       zptr == NULL  || ftab == NULL) {
+      Int32 totalDraw
+         = (n + 1 + NUM_OVERSHOOT_BYTES) * sizeof(UChar) +
+           (n     + NUM_OVERSHOOT_BYTES) * sizeof(Int16) +
+           n                             * sizeof(Int32) +
+           65537                         * sizeof(Int32);
+
+      compressOutOfMemory ( totalDraw, n );
+   }
+
+   /*--
+      Since we want valid indexes for block of
+      -1 to n + NUM_OVERSHOOT_BYTES - 1
+      inclusive.
+   --*/
+   block++;
+
+   /*--
+      The back end needs a place to store the MTF values
+      whilst it calculates the coding tables.  We could
+      put them in the zptr array.  However, these values
+      will fit in a short, so we overlay szptr at the 
+      start of zptr, in the hope of reducing the number
+      of cache misses induced by the multiple traversals
+      of the MTF values when calculating coding tables.
+      Seems to improve compression speed by about 1%.
+   --*/
+   /* Used in sendMTFValues and generateMTFValues */
+   szptr = (UInt16*)zptr;
+}
+
+
+/*---------------------------------------------*/
+void setDecompressStructureSizes ( Int32 newSize100k )
+{
+   if (! (0 <= newSize100k   && newSize100k   <= 9 &&
+          0 <= blockSize100k && blockSize100k <= 9))
+      panic ( "setDecompressStructureSizes" );
+
+   if (newSize100k == blockSize100k) return;
+
+   blockSize100k = newSize100k;
+
+   if (ll16  != NULL) free ( ll16  );
+   if (ll4   != NULL) free ( ll4   );
+   if (ll8   != NULL) free ( ll8   );
+   if (tt    != NULL) free ( tt    );
+
+   if (newSize100k == 0) return;
+
+   if (smallMode) {
+
+      Int32 n = 100000 * newSize100k;
+      ll16    = malloc ( n * sizeof(UInt16) );
+      ll4     = malloc ( ((n+1) >> 1) * sizeof(UChar) );
+
+      if (ll4 == NULL || ll16 == NULL) {
+         Int32 totalDraw
+            = n * sizeof(Int16) + ((n+1) >> 1) * sizeof(UChar);
+         uncompressOutOfMemory ( totalDraw, n );
+      }
+
+   } else {
+
+      Int32 n = 100000 * newSize100k;
+      ll8     = malloc ( n * sizeof(UChar) );
+      tt      = malloc ( n * sizeof(Int32) );
+
+      if (ll8 == NULL || tt == NULL) {
+         Int32 totalDraw
+            = n * sizeof(UChar) + n * sizeof(UInt32);
+         uncompressOutOfMemory ( totalDraw, n );
+      }
+
+   }
+}
+
+
+
 /*---------------------------------------------------*/
 /*--- The new back end                            ---*/
 /*---------------------------------------------------*/
@@ -1047,6 +1239,18 @@ void df_makeMaps ( Int32 *nInUse, UChar *seqToUnseq, UChar *unseqToSeq, Bool *in
          seqToUnseq[*nInUse] = i;
          unseqToSeq[i] = *nInUse;
          (*nInUse)++;
+      }
+}
+
+void makeMaps ()
+{
+   Int32 i;
+   nInUse = 0;
+   for (i = 0; i < 256; i++)
+      if (inUse[i]) {
+         seqToUnseq[nInUse] = i;
+         unseqToSeq[i] = nInUse;
+         nInUse++;
       }
 }
 
@@ -1137,18 +1341,18 @@ void generateMTFValues ( UChar *block, Int32 last, UInt16* szptr, Bool *inUse,
 #define LESSER_ICOST  0
 #define GREATER_ICOST 15
 
-void sendMTFValues ( UInt16 *szptr, Int32 *mtfFreq, Int32 *nMTF, Int32 nInUse, Bool *inUse, Int32 last )
+void sendMTFValues ( UInt16 *szptr, Int32 *nMTF, Int32 nInUse, Bool *inUse )
 {
    Int32 v, t, i, j, gs, ge, totc, bt, bc, iter;
    Int32 nSelectors, alphaSize, minLen, maxLen, selCtr;
    Int32 nGroups, nBytes;
 
-   UChar len  [N_GROUPS][MAX_ALPHA_SIZE]={0};
-   Int32 code [N_GROUPS][MAX_ALPHA_SIZE]={0};
-   Int32 rfreq[N_GROUPS][MAX_ALPHA_SIZE]={0};
+   UChar len  [N_GROUPS][MAX_ALPHA_SIZE];
+   Int32 code [N_GROUPS][MAX_ALPHA_SIZE];
+   Int32 rfreq[N_GROUPS][MAX_ALPHA_SIZE];
 
-   UChar selector   [MAX_SELECTORS]={0};
-   UChar selectorMtf[MAX_SELECTORS]={0};
+   UChar selector   [MAX_SELECTORS];
+   UChar selectorMtf[MAX_SELECTORS];
 
    /*--
    UChar  len [N_GROUPS][MAX_ALPHA_SIZE];
@@ -1161,8 +1365,8 @@ void sendMTFValues ( UInt16 *szptr, Int32 *mtfFreq, Int32 *nMTF, Int32 nInUse, B
    --*/
 
 
-   UInt16 cost[N_GROUPS]={0};
-   Int32  fave[N_GROUPS]={0};
+   UInt16 cost[N_GROUPS];
+   Int32  fave[N_GROUPS];
 
    if (verbosity >= 3)
       fprintf ( stderr, 
@@ -1437,8 +1641,202 @@ void moveToFrontCodeAndSend ( UChar *block, Int32 last, UInt16* szptr,
   debug ("generateMTFValues start");
   generateMTFValues(block, last, szptr, inUse, &nInUse, mtfFreq, &nMTF);
   debug ("generateMTFValues end");
-  sendMTFValues(szptr, mtfFreq, &nMTF, nInUse, inUse, last);
+  sendMTFValues(szptr, &nMTF, nInUse, inUse);
   debug ("moveToFrontCodeAndSend end");
+}
+
+
+/*---------------------------------------------*/
+void recvDecodingTables ( void )
+{
+   Int32 i, j, t, nGroups, nSelectors, alphaSize;
+   Int32 minLen, maxLen;
+   Bool inUse16[16];
+
+   /*--- Receive the mapping table ---*/
+   for (i = 0; i < 16; i++)
+      if (bsR(1) == 1) 
+         inUse16[i] = True; else 
+         inUse16[i] = False;
+
+   for (i = 0; i < 256; i++) inUse[i] = False;
+
+   for (i = 0; i < 16; i++)
+      if (inUse16[i])
+         for (j = 0; j < 16; j++)
+            if (bsR(1) == 1) inUse[i * 16 + j] = True;
+
+   makeMaps();
+   alphaSize = nInUse+2;
+
+   /*--- Now the selectors ---*/
+   nGroups = bsR ( 3 );
+   nSelectors = bsR ( 15 );
+   for (i = 0; i < nSelectors; i++) {
+      j = 0;
+      while (bsR(1) == 1) j++;
+      selectorMtf[i] = j;
+   }
+
+   /*--- Undo the MTF values for the selectors. ---*/
+   {
+      UChar pos[N_GROUPS], tmp, v;
+      for (v = 0; v < nGroups; v++) pos[v] = v;
+   
+      for (i = 0; i < nSelectors; i++) {
+         v = selectorMtf[i];
+         tmp = pos[v];
+         while (v > 0) { pos[v] = pos[v-1]; v--; }
+         pos[0] = tmp;
+         selector[i] = tmp;
+      }
+   }
+
+   /*--- Now the coding tables ---*/
+   for (t = 0; t < nGroups; t++) {
+      Int32 curr = bsR ( 5 );
+      for (i = 0; i < alphaSize; i++) {
+         while (bsR(1) == 1) {
+            if (bsR(1) == 0) curr++; else curr--;
+         }
+         len[t][i] = curr;
+      }
+   }
+
+   /*--- Create the Huffman decoding tables ---*/
+   for (t = 0; t < nGroups; t++) {
+      minLen = 32;
+      maxLen = 0;
+      for (i = 0; i < alphaSize; i++) {
+         if (len[t][i] > maxLen) maxLen = len[t][i];
+         if (len[t][i] < minLen) minLen = len[t][i];
+      }
+      hbCreateDecodeTables ( 
+         &limit[t][0], &base[t][0], &perm[t][0], &len[t][0],
+         minLen, maxLen, alphaSize
+      );
+      minLens[t] = minLen;
+   }
+}
+
+
+/*---------------------------------------------*/
+#define GET_MTF_VAL(lval)                 \
+{                                         \
+   Int32 zt, zn, zvec, zj;                \
+   if (groupPos == 0) {                   \
+      groupNo++;                          \
+      groupPos = G_SIZE;                  \
+   }                                      \
+   groupPos--;                            \
+   zt = selector[groupNo];                \
+   zn = minLens[zt];                      \
+   zvec = bsR ( zn );                     \
+   while (zvec > limit[zt][zn]) {         \
+      zn++; bsR1(zj);                     \
+      zvec = (zvec << 1) | zj;            \
+   };                                     \
+   lval = perm[zt][zvec - base[zt][zn]];  \
+}
+
+
+/*---------------------------------------------*/
+void getAndMoveToFrontDecode ( void )
+{
+   UChar  yy[256];
+   Int32  i, j, nextSym, limitLast;
+   Int32  EOB, groupNo, groupPos;
+
+   limitLast = SIZE100K * blockSize100k;
+   origPtr   = bsGetIntVS ( 24 );
+
+   recvDecodingTables();
+   EOB      = nInUse+1;
+   groupNo  = -1;
+   groupPos = 0;
+
+   /*--
+      Setting up the unzftab entries here is not strictly
+      necessary, but it does save having to do it later
+      in a separate pass, and so saves a block's worth of
+      cache misses.
+   --*/
+   for (i = 0; i <= 255; i++) unzftab[i] = 0;
+
+   for (i = 0; i <= 255; i++) yy[i] = (UChar) i;
+
+   last = -1;
+
+   GET_MTF_VAL(nextSym);
+
+   while (True) {
+
+      if (nextSym == EOB) break;
+
+      if (nextSym == RUNA || nextSym == RUNB) {
+         UChar ch;
+         Int32 s = -1;
+         Int32 N = 1;
+         do {
+            if (nextSym == RUNA) s = s + (0+1) * N; else
+            if (nextSym == RUNB) s = s + (1+1) * N;
+            N = N * 2;
+            GET_MTF_VAL(nextSym);
+         }
+            while (nextSym == RUNA || nextSym == RUNB);
+
+         s++;
+         ch = seqToUnseq[yy[0]];
+         unzftab[ch] += s;
+
+         if (smallMode)
+            while (s > 0) {
+               last++; 
+               ll16[last] = ch;
+               s--;
+            }
+         else
+            while (s > 0) {
+               last++;
+               ll8[last] = ch;
+               s--;
+            };
+
+         if (last >= limitLast) blockOverrun();
+         continue;
+
+      } else {
+
+         UChar tmp;
+         last++; if (last >= limitLast) blockOverrun();
+
+         tmp = yy[nextSym-1];
+         unzftab[seqToUnseq[tmp]]++;
+         if (smallMode)
+            ll16[last] = seqToUnseq[tmp]; else
+            ll8[last]  = seqToUnseq[tmp];
+
+         /*--
+            This loop is hammered during decompression,
+            hence the unrolling.
+
+            for (j = nextSym-1; j > 0; j--) yy[j] = yy[j-1];
+         --*/
+
+         j = nextSym-1;
+         for (; j > 3; j -= 4) {
+            yy[j]   = yy[j-1];
+            yy[j-1] = yy[j-2];
+            yy[j-2] = yy[j-3];
+            yy[j-3] = yy[j-4];
+         }
+         for (; j > 0; j--) yy[j] = yy[j-1];
+
+         yy[0] = tmp;
+         GET_MTF_VAL(nextSym);
+         continue;
+      }
+   }
 }
 
 
@@ -1456,6 +1854,97 @@ void moveToFrontCodeAndSend ( UChar *block, Int32 last, UInt16* szptr,
   into the subscript range
   [last+1 .. last+NUM_OVERSHOOT_BYTES].
 --*/
+INLINE Bool fullGtU ( Int32 i1, Int32 i2 )
+{
+   Int32 k;
+   UChar c1, c2;
+   UInt16 s1, s2;
+
+   #if DEBUG
+      /*--
+        shellsort shouldn't ask to compare
+        something with itself.
+      --*/
+      assert (i1 != i2);
+   #endif
+
+   c1 = block[i1];
+   c2 = block[i2];
+   if (c1 != c2) return (c1 > c2);
+   i1++; i2++;
+
+   c1 = block[i1];
+   c2 = block[i2];
+   if (c1 != c2) return (c1 > c2);
+   i1++; i2++;
+
+   c1 = block[i1];
+   c2 = block[i2];
+   if (c1 != c2) return (c1 > c2);
+   i1++; i2++;
+
+   c1 = block[i1];
+   c2 = block[i2];
+   if (c1 != c2) return (c1 > c2);
+   i1++; i2++;
+
+   c1 = block[i1];
+   c2 = block[i2];
+   if (c1 != c2) return (c1 > c2);
+   i1++; i2++;
+
+   c1 = block[i1];
+   c2 = block[i2];
+   if (c1 != c2) return (c1 > c2);
+   i1++; i2++;
+
+   k = last + 1;
+
+   do {
+
+      c1 = block[i1];
+      c2 = block[i2];
+      if (c1 != c2) return (c1 > c2);
+      s1 = quadrant[i1];
+      s2 = quadrant[i2];
+      if (s1 != s2) return (s1 > s2);
+      i1++; i2++;
+
+      c1 = block[i1];
+      c2 = block[i2];
+      if (c1 != c2) return (c1 > c2);
+      s1 = quadrant[i1];
+      s2 = quadrant[i2];
+      if (s1 != s2) return (s1 > s2);
+      i1++; i2++;
+
+      c1 = block[i1];
+      c2 = block[i2];
+      if (c1 != c2) return (c1 > c2);
+      s1 = quadrant[i1];
+      s2 = quadrant[i2];
+      if (s1 != s2) return (s1 > s2);
+      i1++; i2++;
+
+      c1 = block[i1];
+      c2 = block[i2];
+      if (c1 != c2) return (c1 > c2);
+      s1 = quadrant[i1];
+      s2 = quadrant[i2];
+      if (s1 != s2) return (s1 > s2);
+      i1++; i2++;
+
+      if (i1 > last) { i1 -= last; i1--; };
+      if (i2 > last) { i2 -= last; i2--; };
+
+      k -= 4;
+      workDone++;
+   }
+      while (k >= 0);
+
+   return False;
+}
+
 INLINE Bool df_fullGtU ( UChar *block, Int32 last, UInt16* quadrant,
 			 Int32 *workDone_p, Int32 i1, Int32 i2 )
 {
@@ -1559,6 +2048,67 @@ Int32 incs[14] = { 1, 4, 13, 40, 121, 364, 1093, 3280,
                    9841, 29524, 88573, 265720,
                    797161, 2391484 };
 
+void simpleSort ( Int32 lo, Int32 hi, Int32 d )
+{
+   Int32 i, j, h, bigN, hp;
+   Int32 v;
+
+   bigN = hi - lo + 1;
+   if (bigN < 2) return;
+
+   hp = 0;
+   while (incs[hp] < bigN) hp++;
+   hp--;
+
+   for (; hp >= 0; hp--) {
+      h = incs[hp];
+      if (verbosity >= 5) 
+         fprintf ( stderr, "          shell increment %d\n", h );
+
+      i = lo + h;
+      while (True) {
+
+         /*-- copy 1 --*/
+         if (i > hi) break;
+         v = zptr[i];
+         j = i;
+         while ( fullGtU ( zptr[j-h]+d, v+d ) ) {
+            zptr[j] = zptr[j-h];
+            j = j - h;
+            if (j <= (lo + h - 1)) break;
+         }
+         zptr[j] = v;
+         i++;
+
+         /*-- copy 2 --*/
+         if (i > hi) break;
+         v = zptr[i];
+         j = i;
+         while ( fullGtU ( zptr[j-h]+d, v+d ) ) {
+            zptr[j] = zptr[j-h];
+            j = j - h;
+            if (j <= (lo + h - 1)) break;
+         }
+         zptr[j] = v;
+         i++;
+
+         /*-- copy 3 --*/
+         if (i > hi) break;
+         v = zptr[i];
+         j = i;
+         while ( fullGtU ( zptr[j-h]+d, v+d ) ) {
+            zptr[j] = zptr[j-h];
+            j = j - h;
+            if (j <= (lo + h - 1)) break;
+         }
+         zptr[j] = v;
+         i++;
+
+         if (workDone > workLimit && firstAttempt) return;
+      }
+   }
+}
+
 void df_simpleSort ( UChar *block, Int32 last, Int32 *zptr, UInt16 *quadrant,
 		  Int32 *workDone_p, Int32 workLimit, Bool firstAttempt,
 		  Int32 lo, Int32 hi, Int32 d )
@@ -1579,8 +2129,10 @@ void df_simpleSort ( UChar *block, Int32 last, Int32 *zptr, UInt16 *quadrant,
          fprintf ( stderr, "          shell increment %d\n", h );
 
       i = lo + h;
-      for (i = lo + h; i <= hi; i++){
+      while (True) {
 
+         /*-- copy 1 --*/
+         if (i > hi) break;
          v = zptr[i];
          j = i;
          while ( df_fullGtU ( block, last, quadrant, workDone_p, zptr[j-h]+d, v+d ) ) {
@@ -1589,6 +2141,31 @@ void df_simpleSort ( UChar *block, Int32 last, Int32 *zptr, UInt16 *quadrant,
             if (j <= (lo + h - 1)) break;
          }
          zptr[j] = v;
+         i++;
+
+         /*-- copy 2 --*/
+         if (i > hi) break;
+         v = zptr[i];
+         j = i;
+         while ( df_fullGtU ( block ,last, quadrant, workDone_p, zptr[j-h]+d, v+d ) ) {
+            zptr[j] = zptr[j-h];
+            j = j - h;
+            if (j <= (lo + h - 1)) break;
+         }
+         zptr[j] = v;
+         i++;
+
+         /*-- copy 3 --*/
+         if (i > hi) break;
+         v = zptr[i];
+         j = i;
+         while ( df_fullGtU ( block, last, quadrant, workDone_p, zptr[j-h]+d, v+d ) ) {
+            zptr[j] = zptr[j-h];
+            j = j - h;
+            if (j <= (lo + h - 1)) break;
+         }
+         zptr[j] = v;
+         i++;
 
          if (*workDone_p > workLimit && firstAttempt) return;
       }
@@ -1607,6 +2184,14 @@ void df_simpleSort ( UChar *block, Int32 last, Int32 *zptr, UInt16 *quadrant,
 
 #define swap(lv1, lv2) \
    { Int32 tmp = lv1; lv1 = lv2; lv2 = tmp; }
+
+INLINE void vswap (Int32 p1, Int32 p2, Int32 n )
+{
+   while (n > 0) {
+      swap(zptr[p1], zptr[p2]);
+      p1++; p2++; n--;
+   }
+}
 
 INLINE void df_vswap (Int32 *zptr, Int32 p1, Int32 p2, Int32 n )
 {
@@ -1654,6 +2239,73 @@ typedef
    limit seems very generous.
 --*/
 #define QSORT_STACK_SIZE 1000
+
+void qSort3 ( Int32 loSt, Int32 hiSt, Int32 dSt )
+{
+   Int32 unLo, unHi, ltLo, gtHi, med, n, m;
+   Int32 sp, lo, hi, d;
+   StackElem stack[QSORT_STACK_SIZE];
+
+   sp = 0;
+   push ( loSt, hiSt, dSt );
+
+   while (sp > 0) {
+
+      if (sp >= QSORT_STACK_SIZE) panic ( "stack overflow in qSort3" );
+
+      pop ( lo, hi, d );
+
+      if (hi - lo < SMALL_THRESH || d > DEPTH_THRESH) {
+         simpleSort ( lo, hi, d );
+         if (workDone > workLimit && firstAttempt) return;
+         continue;
+      }
+
+      med = med3 ( block[zptr[ lo         ]+d],
+                   block[zptr[ hi         ]+d],
+                   block[zptr[ (lo+hi)>>1 ]+d] );
+
+      unLo = ltLo = lo;
+      unHi = gtHi = hi;
+
+      while (True) {
+         while (True) {
+            if (unLo > unHi) break;
+            n = ((Int32)block[zptr[unLo]+d]) - med;
+            if (n == 0) { swap(zptr[unLo], zptr[ltLo]); ltLo++; unLo++; continue; };
+            if (n >  0) break;
+            unLo++;
+         }
+         while (True) {
+            if (unLo > unHi) break;
+            n = ((Int32)block[zptr[unHi]+d]) - med;
+            if (n == 0) { swap(zptr[unHi], zptr[gtHi]); gtHi--; unHi--; continue; };
+            if (n <  0) break;
+            unHi--;
+         }
+         if (unLo > unHi) break;
+         swap(zptr[unLo], zptr[unHi]); unLo++; unHi--;
+      }
+      #if DEBUG
+         assert (unHi == unLo-1);
+      #endif
+
+      if (gtHi < ltLo) {
+         push(lo, hi, d+1 );
+         continue;
+      }
+
+      n = min(ltLo-lo, unLo-ltLo); vswap(lo, unLo-n, n);
+      m = min(hi-gtHi, gtHi-unHi); vswap(unLo, hi-m+1, m);
+
+      n = lo + unLo - ltLo - 1;
+      m = hi - (gtHi - unHi) + 1;
+
+      push ( lo, n, d );
+      push ( n+1, m-1, d+1 );
+      push ( m, hi, d );
+   }
+}
 
 void df_qSort3 ( UChar *block, Int32 last, Int32 *zptr, UInt16* quadrant,
 	      Int32 *workDone_p, Int32 workLimit, Bool firstAttempt,
@@ -1732,6 +2384,191 @@ void df_qSort3 ( UChar *block, Int32 last, Int32 *zptr, UInt16* quadrant,
 
 #define SETMASK (1 << 21)
 #define CLEARMASK (~(SETMASK))
+
+void sortIt ( void )
+{
+   Int32 i, j, ss, sb;
+   Int32 runningOrder[256];
+   Int32 copy[256];
+   Bool bigDone[256];
+   UChar c1, c2;
+   Int32 numQSorted;
+
+   /*--
+      In the various block-sized structures, live data runs
+      from 0 to last+NUM_OVERSHOOT_BYTES inclusive.  First,
+      set up the overshoot area for block.
+   --*/
+
+   if (verbosity >= 4) fprintf ( stderr, "        sort initialise ...\n" );
+   for (i = 0; i < NUM_OVERSHOOT_BYTES; i++)
+       block[last+i+1] = block[i % (last+1)];
+   for (i = 0; i <= last+NUM_OVERSHOOT_BYTES; i++)
+       quadrant[i] = 0;
+
+   block[-1] = block[last];
+
+   if (last < 400) {
+
+      /*--
+         Use simpleSort(), since the full sorting mechanism
+         has quite a large constant overhead.
+      --*/
+      if (verbosity >= 4) fprintf ( stderr, "        simpleSort ...\n" );
+      for (i = 0; i <= last; i++) zptr[i] = i;
+      firstAttempt = False;
+      workDone = workLimit = 0;
+      simpleSort ( 0, last, 0 );
+      if (verbosity >= 4) fprintf ( stderr, "        simpleSort done.\n" );
+
+   } else {
+
+      numQSorted = 0;
+      for (i = 0; i <= 255; i++) bigDone[i] = False;
+
+      if (verbosity >= 4) fprintf ( stderr, "        bucket sorting ...\n" );
+
+      for (i = 0; i <= 65536; i++) ftab[i] = 0;
+
+      c1 = block[-1];
+      for (i = 0; i <= last; i++) {
+         c2 = block[i];
+         ftab[(c1 << 8) + c2]++;
+         c1 = c2;
+      }
+
+      for (i = 1; i <= 65536; i++) ftab[i] += ftab[i-1];
+
+      c1 = block[0];
+      for (i = 0; i < last; i++) {
+         c2 = block[i+1];
+         j = (c1 << 8) + c2;
+         c1 = c2;
+         ftab[j]--;
+         zptr[ftab[j]] = i;
+      }
+      j = (block[last] << 8) + block[0];
+      ftab[j]--;
+      zptr[ftab[j]] = last;
+
+      /*--
+         Now ftab contains the first loc of every small bucket.
+         Calculate the running order, from smallest to largest
+         big bucket.
+      --*/
+
+      for (i = 0; i <= 255; i++) runningOrder[i] = i;
+
+      {
+         Int32 vv;
+         Int32 h = 1;
+         do h = 3 * h + 1; while (h <= 256);
+         do {
+            h = h / 3;
+            for (i = h; i <= 255; i++) {
+               vv = runningOrder[i];
+               j = i;
+               while ( BIGFREQ(runningOrder[j-h]) > BIGFREQ(vv) ) {
+                  runningOrder[j] = runningOrder[j-h];
+                  j = j - h;
+                  if (j <= (h - 1)) goto zero;
+               }
+               zero:
+               runningOrder[j] = vv;
+            }
+         } while (h != 1);
+      }
+
+      /*--
+         The main sorting loop.
+      --*/
+
+      for (i = 0; i <= 255; i++) {
+
+         /*--
+            Process big buckets, starting with the least full.
+         --*/
+         ss = runningOrder[i];
+
+         /*--
+            Complete the big bucket [ss] by quicksorting
+            any unsorted small buckets [ss, j].  Hopefully
+            previous pointer-scanning phases have already
+            completed many of the small buckets [ss, j], so
+            we don't have to sort them at all.
+         --*/
+         for (j = 0; j <= 255; j++) {
+            sb = (ss << 8) + j;
+            if ( ! (ftab[sb] & SETMASK) ) {
+               Int32 lo = ftab[sb]   & CLEARMASK;
+               Int32 hi = (ftab[sb+1] & CLEARMASK) - 1;
+               if (hi > lo) {
+                  if (verbosity >= 4)
+                     fprintf ( stderr,
+                               "        qsort [0x%x, 0x%x]   done %d   this %d\n",
+                               ss, j, numQSorted, hi - lo + 1 );
+                  qSort3 ( lo, hi, 2 );
+                  numQSorted += ( hi - lo + 1 );
+                  if (workDone > workLimit && firstAttempt) return;
+               }
+               ftab[sb] |= SETMASK;
+            }
+         }
+
+         /*--
+            The ss big bucket is now done.  Record this fact,
+            and update the quadrant descriptors.  Remember to
+            update quadrants in the overshoot area too, if
+            necessary.  The "if (i < 255)" test merely skips
+            this updating for the last bucket processed, since
+            updating for the last bucket is pointless.
+         --*/
+         bigDone[ss] = True;
+
+         if (i < 255) {
+            Int32 bbStart  = ftab[ss << 8] & CLEARMASK;
+            Int32 bbSize   = (ftab[(ss+1) << 8] & CLEARMASK) - bbStart;
+            Int32 shifts   = 0;
+
+            while ((bbSize >> shifts) > 65534) shifts++;
+
+            for (j = 0; j < bbSize; j++) {
+               Int32 a2update     = zptr[bbStart + j];
+               UInt16 qVal        = (UInt16)(j >> shifts);
+               quadrant[a2update] = qVal;
+               if (a2update < NUM_OVERSHOOT_BYTES)
+                  quadrant[a2update + last + 1] = qVal;
+            }
+
+            if (! ( ((bbSize-1) >> shifts) <= 65535 )) panic ( "sortIt" );
+         }
+
+         /*--
+            Now scan this big bucket so as to synthesise the
+            sorted order for small buckets [t, ss] for all t != ss.
+         --*/
+         for (j = 0; j <= 255; j++)
+            copy[j] = ftab[(j << 8) + ss] & CLEARMASK;
+
+         for (j = ftab[ss << 8] & CLEARMASK;
+              j < (ftab[(ss+1) << 8] & CLEARMASK);
+              j++) {
+            c1 = block[zptr[j]-1];
+            if ( ! bigDone[c1] ) {
+               zptr[copy[c1]] = zptr[j] == 0 ? last : zptr[j] - 1;
+               copy[c1] ++;
+            }
+         }
+
+         for (j = 0; j <= 255; j++) ftab[(j << 8) + ss] |= SETMASK;
+      }
+      
+      if (verbosity >= 4)
+         fprintf ( stderr, "        %d pointers, %d sorted, %d scanned\n",
+                           last+1, numQSorted, (last+1) - numQSorted );
+   }
+}
+
 void df_sortIt ( UChar *block, Int32 last, Int32 *zptr,
 	      Int32 *workDone_p, Int32 *workLimit_p, Bool *firstAttempt_p )
 {
@@ -2065,6 +2902,295 @@ Bool doReversibleTransformation ( UChar *block, Int32 last, Int32 *zptr, Int32 *
 }
 
 
+/*---------------------------------------------*/
+
+INLINE Int32 indexIntoF ( Int32 indx, Int32 *cftab )
+{
+   Int32 nb, na, mid;
+   nb = 0;
+   na = 256;
+   do {
+      mid = (nb + na) >> 1;
+      if (indx >= cftab[mid]) nb = mid; else na = mid;
+   }
+   while (na - nb != 1);
+   return nb;
+}
+
+
+#define GET_SMALL(cccc)                     \
+                                            \
+      cccc = indexIntoF ( tPos, cftab );    \
+      tPos = GET_LL(tPos);
+
+
+#ifdef SPEC_CPU2000
+void undoReversibleTransformation_small ( int dst )
+#else
+void undoReversibleTransformation_small ( FILE* dst )
+#endif
+{
+   Int32  cftab[257], cftabAlso[257];
+   Int32  i, j, tmp, tPos;
+   UChar  ch;
+
+   /*--
+      We assume here that the global array unzftab will
+      already be holding the frequency counts for
+      ll8[0 .. last].
+   --*/
+
+   /*-- Set up cftab to facilitate generation of indexIntoF --*/
+   cftab[0] = 0;
+   for (i = 1; i <= 256; i++) cftab[i] = unzftab[i-1];
+   for (i = 1; i <= 256; i++) cftab[i] += cftab[i-1];
+
+   /*-- Make a copy of it, used in generation of T --*/
+   for (i = 0; i <= 256; i++) cftabAlso[i] = cftab[i];
+
+   /*-- compute the T vector --*/
+   for (i = 0; i <= last; i++) {
+      ch = (UChar)ll16[i];
+      SET_LL(i, cftabAlso[ch]);
+      cftabAlso[ch]++;
+   }
+
+   /*--
+      Compute T^(-1) by pointer reversal on T.  This is rather
+      subtle, in that, if the original block was two or more
+      (in general, N) concatenated copies of the same thing,
+      the T vector will consist of N cycles, each of length
+      blocksize / N, and decoding will involve traversing one
+      of these cycles N times.  Which particular cycle doesn't
+      matter -- they are all equivalent.  The tricky part is to
+      make sure that the pointer reversal creates a correct
+      reversed cycle for us to traverse.  So, the code below
+      simply reverses whatever cycle origPtr happens to fall into,
+      without regard to the cycle length.  That gives one reversed
+      cycle, which for normal blocks, is the entire block-size long.
+      For repeated blocks, it will be interspersed with the other
+      N-1 non-reversed cycles.  Providing that the F-subscripting
+      phase which follows starts at origPtr, all then works ok.
+   --*/
+   i = origPtr;
+   j = GET_LL(i);
+   do {
+      tmp = GET_LL(j);
+      SET_LL(j, i);
+      i = j;
+      j = tmp;
+   }
+      while (i != origPtr);
+
+   /*--
+      We recreate the original by subscripting F through T^(-1).
+      The run-length-decoder below requires characters incrementally,
+      so tPos is set to a starting value, and is updated by
+      the GET_SMALL macro.
+   --*/
+   tPos   = origPtr;
+
+   /*-------------------------------------------------*/
+   /*--
+      This is pretty much a verbatim copy of the
+      run-length decoder present in the distribution
+      bzip-0.21; it has to be here to avoid creating
+      block[] as an intermediary structure.  As in 0.21,
+      this code derives from some sent to me by
+      Christian von Roques.
+
+      It allows dst==NULL, so as to support the test (-t)
+      option without slowing down the fast decompression
+      code.
+   --*/
+   {
+      IntNative retVal;
+      Int32     i2, count, chPrev, ch2;
+      UInt32    localCrc;
+
+      count    = 0;
+      i2       = 0;
+      ch2      = 256;   /*-- not a char and not EOF --*/
+      localCrc = getGlobalCRC();
+
+      {
+         RAND_DECLS;
+         while ( i2 <= last ) {
+            chPrev = ch2;
+            GET_SMALL(ch2);
+            if (blockRandomised) {
+               RAND_UPD_MASK;
+               ch2 ^= (UInt32)RAND_MASK;
+            }
+            i2++;
+   
+            if (dst)
+               retVal = putc ( ch2, dst );
+   
+            UPDATE_CRC ( localCrc, (UChar)ch2 );
+   
+            if (ch2 != chPrev) {
+               count = 1;
+            } else {
+               count++;
+               if (count >= 4) {
+                  Int32 j2;
+                  UChar z;
+                  GET_SMALL(z);
+                  if (blockRandomised) {
+                     RAND_UPD_MASK;
+                     z ^= RAND_MASK;
+                  }
+                  for (j2 = 0;  j2 < (Int32)z;  j2++) {
+                     if (dst) retVal = putc (ch2, dst);
+                     UPDATE_CRC ( localCrc, (UChar)ch2 );
+                  }
+                  i2++;
+                  count = 0;
+               }
+            }
+         }
+      }
+
+      setGlobalCRC ( localCrc );
+   }
+   /*-- end of the in-line run-length-decoder. --*/
+}
+#undef GET_SMALL
+
+
+/*---------------------------------------------*/
+
+#define GET_FAST(cccc)                       \
+                                             \
+      cccc = ll8[tPos];                      \
+      tPos = tt[tPos];
+
+
+#ifdef SPEC_CPU2000
+void undoReversibleTransformation_fast ( int dst )
+#else
+void undoReversibleTransformation_fast ( FILE* dst )
+#endif
+{
+   Int32  cftab[257];
+   Int32  i, tPos;
+   UChar  ch;
+
+   /*--
+      We assume here that the global array unzftab will
+      already be holding the frequency counts for
+      ll8[0 .. last].
+   --*/
+
+   /*-- Set up cftab to facilitate generation of T^(-1) --*/
+   cftab[0] = 0;
+   for (i = 1; i <= 256; i++) cftab[i] = unzftab[i-1];
+   for (i = 1; i <= 256; i++) cftab[i] += cftab[i-1];
+
+   /*-- compute the T^(-1) vector --*/
+   for (i = 0; i <= last; i++) {
+      ch = (UChar)ll8[i];
+      tt[cftab[ch]] = i;
+      cftab[ch]++;
+   }
+
+   /*--
+      We recreate the original by subscripting L through T^(-1).
+      The run-length-decoder below requires characters incrementally,
+      so tPos is set to a starting value, and is updated by
+      the GET_FAST macro.
+   --*/
+   tPos   = tt[origPtr];
+
+   /*-------------------------------------------------*/
+   /*--
+      This is pretty much a verbatim copy of the
+      run-length decoder present in the distribution
+      bzip-0.21; it has to be here to avoid creating
+      block[] as an intermediary structure.  As in 0.21,
+      this code derives from some sent to me by
+      Christian von Roques.
+   --*/
+   {
+      IntNative retVal;
+      Int32     i2, count, chPrev, ch2;
+      UInt32    localCrc;
+
+      count    = 0;
+      i2       = 0;
+      ch2      = 256;   /*-- not a char and not EOF --*/
+      localCrc = getGlobalCRC();
+
+      if (blockRandomised) {
+         RAND_DECLS;
+         while ( i2 <= last ) {
+            chPrev = ch2;
+            GET_FAST(ch2);
+            RAND_UPD_MASK;
+            ch2 ^= (UInt32)RAND_MASK;
+            i2++;
+   
+            retVal = putc ( ch2, dst );
+            UPDATE_CRC ( localCrc, (UChar)ch2 );
+   
+            if (ch2 != chPrev) {
+               count = 1;
+            } else {
+               count++;
+               if (count >= 4) {
+                  Int32 j2;
+                  UChar z;
+                  GET_FAST(z);
+                  RAND_UPD_MASK;
+                  z ^= RAND_MASK;
+                  for (j2 = 0;  j2 < (Int32)z;  j2++) {
+                     retVal = putc (ch2, dst);
+                     UPDATE_CRC ( localCrc, (UChar)ch2 );
+                  }
+                  i2++;
+                  count = 0;
+               }
+            }
+         }
+
+      } else {
+
+         while ( i2 <= last ) {
+            chPrev = ch2;
+            GET_FAST(ch2);
+            i2++;
+   
+            retVal = putc ( ch2, dst );
+            UPDATE_CRC ( localCrc, (UChar)ch2 );
+   
+            if (ch2 != chPrev) {
+               count = 1;
+            } else {
+               count++;
+               if (count >= 4) {
+                  Int32 j2;
+                  UChar z;
+                  GET_FAST(z);
+                  for (j2 = 0;  j2 < (Int32)z;  j2++) {
+                     retVal = putc (ch2, dst);
+                     UPDATE_CRC ( localCrc, (UChar)ch2 );
+                  }
+                  i2++;
+                  count = 0;
+               }
+            }
+         }
+
+      }   /*-- if (blockRandomised) --*/
+
+      setGlobalCRC ( localCrc );
+   }
+   /*-- end of the in-line run-length-decoder. --*/
+}
+#undef GET_FAST
+
+
 /*---------------------------------------------------*/
 /*--- The block loader and RLEr                   ---*/
 /*---------------------------------------------------*/
@@ -2238,7 +3364,7 @@ void compressStream ( FILE *stream, FILE *zStream )
       block++;
 
       Bool  inUse[256];
-      Int32 origPtr;
+      UInt32 origPtr;
 
       loadAndRLEsource ( stream, inUse, block, &last );
 
@@ -2285,7 +3411,7 @@ void compressStream ( FILE *stream, FILE *zStream )
 
       bsPutIntVS ( 24, origPtr );      
       
-      sendMTFValues(szptr, mtfFreq, &nMTF, nInUse, inUse, last);
+      sendMTFValues(szptr, &nMTF, nInUse, inUse);
       debug ("moveToFrontCodeAndSend end");
 
       ERROR_IF_NOT_ZERO ( ferror(zStream) );
@@ -2338,6 +3464,256 @@ void compressStream ( FILE *stream, FILE *zStream )
                 bytesOut
               );
 }
+
+
+/*---------------------------------------------*/
+#if defined(SPEC_CPU2000)
+/* All of the SPECified stdio functions really take an int. */
+Bool uncompressStream ( int zStream, int stream )
+#else
+Bool uncompressStream ( FILE *zStream, FILE *stream )
+#endif
+{
+   UChar      magic1, magic2, magic3, magic4;
+   UChar      magic5, magic6;
+   UInt32     storedBlockCRC, storedCombinedCRC;
+   UInt32     computedBlockCRC, computedCombinedCRC;
+   Int32      currBlockNo;
+   IntNative  retVal;
+
+   SET_BINARY_MODE(stream);
+   SET_BINARY_MODE(zStream);
+
+   ERROR_IF_NOT_ZERO ( ferror(stream) );
+   ERROR_IF_NOT_ZERO ( ferror(zStream) );
+
+   bsSetStream ( zStream, False );
+
+   /*--
+      A bad magic number is `recoverable from';
+      return with False so the caller skips the file.
+   --*/
+   magic1 = bsGetUChar ();
+   magic2 = bsGetUChar ();
+   magic3 = bsGetUChar ();
+   magic4 = bsGetUChar ();
+   if (magic1 != 'B' ||
+       magic2 != 'Z' ||
+       magic3 != 'h' ||
+       magic4 < '1'  ||
+       magic4 > '9') {
+     bsFinishedWithStream();
+     retVal = fclose ( stream );
+     ERROR_IF_EOF ( retVal );
+     return False;
+   }
+
+   setDecompressStructureSizes ( magic4 - '0' );
+   computedCombinedCRC = 0;
+
+   if (verbosity >= 2) fprintf ( stderr, "\n    " );
+   currBlockNo = 0;
+
+   while (True) {
+      magic1 = bsGetUChar ();
+      magic2 = bsGetUChar ();
+      magic3 = bsGetUChar ();
+      magic4 = bsGetUChar ();
+      magic5 = bsGetUChar ();
+      magic6 = bsGetUChar ();
+      if (magic1 == 0x17 && magic2 == 0x72 &&
+          magic3 == 0x45 && magic4 == 0x38 &&
+          magic5 == 0x50 && magic6 == 0x90) break;
+
+      if (magic1 != 0x31 || magic2 != 0x41 ||
+          magic3 != 0x59 || magic4 != 0x26 ||
+          magic5 != 0x53 || magic6 != 0x59) badBlockHeader();
+
+      storedBlockCRC = bsGetUInt32 ();
+
+      if (bsR(1) == 1)
+         blockRandomised = True; else
+         blockRandomised = False;
+
+      currBlockNo++;
+      if (verbosity >= 2)
+         fprintf ( stderr, "[%d: huff+mtf ", currBlockNo );
+      getAndMoveToFrontDecode ();
+      ERROR_IF_NOT_ZERO ( ferror(zStream) );
+
+      initialiseCRC();
+      if (verbosity >= 2) fprintf ( stderr, "rt+rld" );
+      if (smallMode)
+         undoReversibleTransformation_small ( stream );
+         else
+         undoReversibleTransformation_fast  ( stream );
+
+      ERROR_IF_NOT_ZERO ( ferror(stream) );
+
+      computedBlockCRC = getFinalCRC();
+      if (verbosity >= 3)
+         fprintf ( stderr, " {0x%x, 0x%x}", storedBlockCRC, computedBlockCRC );
+      if (verbosity >= 2) fprintf ( stderr, "] " );
+
+      /*-- A bad CRC is considered a fatal error. --*/
+      if (storedBlockCRC != computedBlockCRC)
+         crcError ( storedBlockCRC, computedBlockCRC );
+
+      computedCombinedCRC = (computedCombinedCRC << 1) | (computedCombinedCRC >> 31);
+      computedCombinedCRC ^= computedBlockCRC;
+   };
+
+   if (verbosity >= 2) fprintf ( stderr, "\n    " );
+
+   storedCombinedCRC  = bsGetUInt32 ();
+   if (verbosity >= 2)
+      fprintf ( stderr,
+                "combined CRCs: stored = 0x%x, computed = 0x%x\n    ",
+                storedCombinedCRC, computedCombinedCRC );
+   if (storedCombinedCRC != computedCombinedCRC)
+      crcError ( storedCombinedCRC, computedCombinedCRC );
+
+
+   bsFinishedWithStream ();
+   ERROR_IF_NOT_ZERO ( ferror(zStream) );
+   retVal = fclose ( zStream );
+   ERROR_IF_EOF ( retVal );
+
+   ERROR_IF_NOT_ZERO ( ferror(stream) );
+   retVal = fflush ( stream );
+   ERROR_IF_NOT_ZERO ( retVal );
+#ifndef SPEC_CPU2000
+   if (stream != stdout) {
+      retVal = fclose ( stream );
+      ERROR_IF_EOF ( retVal );
+   }
+#endif
+   return True;
+}
+
+
+/*---------------------------------------------*/
+#if defined(SPEC_CPU2000)
+Bool testStream ( int zStream )
+#else
+Bool testStream ( FILE *zStream )
+#endif
+{
+   UChar      magic1, magic2, magic3, magic4;
+   UChar      magic5, magic6;
+   UInt32     storedBlockCRC, storedCombinedCRC;
+   UInt32     computedBlockCRC, computedCombinedCRC;
+   Int32      currBlockNo;
+   IntNative  retVal;
+
+   SET_BINARY_MODE(zStream);
+   ERROR_IF_NOT_ZERO ( ferror(zStream) );
+
+   bsSetStream ( zStream, False );
+
+   magic1 = bsGetUChar ();
+   magic2 = bsGetUChar ();
+   magic3 = bsGetUChar ();
+   magic4 = bsGetUChar ();
+   if (magic1 != 'B' ||
+       magic2 != 'Z' ||
+       magic3 != 'h' ||
+       magic4 < '1'  ||
+       magic4 > '9') {
+     bsFinishedWithStream();
+     fclose ( zStream );
+     fprintf ( stderr, "\n%s: bad magic number (ie, not created by bzip2)\n",
+                       inName );
+     return False;
+   }
+
+   smallMode = True;
+   setDecompressStructureSizes ( magic4 - '0' );
+   computedCombinedCRC = 0;
+
+   if (verbosity >= 2) fprintf ( stderr, "\n" );
+   currBlockNo = 0;
+
+   while (True) {
+      magic1 = bsGetUChar ();
+      magic2 = bsGetUChar ();
+      magic3 = bsGetUChar ();
+      magic4 = bsGetUChar ();
+      magic5 = bsGetUChar ();
+      magic6 = bsGetUChar ();
+      if (magic1 == 0x17 && magic2 == 0x72 &&
+          magic3 == 0x45 && magic4 == 0x38 &&
+          magic5 == 0x50 && magic6 == 0x90) break;
+
+      currBlockNo++;
+      if (magic1 != 0x31 || magic2 != 0x41 ||
+          magic3 != 0x59 || magic4 != 0x26 ||
+          magic5 != 0x53 || magic6 != 0x59) {
+         bsFinishedWithStream();
+         fclose ( zStream );
+         fprintf ( stderr,
+                   "\n%s, block %d: bad header (not == 0x314159265359)\n",
+                   inName, currBlockNo );
+         return False;
+      }
+      storedBlockCRC = bsGetUInt32 ();
+
+      if (bsR(1) == 1)
+         blockRandomised = True; else
+         blockRandomised = False;
+
+      if (verbosity >= 2)
+         fprintf ( stderr, "    block [%d: huff+mtf ", currBlockNo );
+      getAndMoveToFrontDecode ();
+      ERROR_IF_NOT_ZERO ( ferror(zStream) );
+
+      initialiseCRC();
+      if (verbosity >= 2) fprintf ( stderr, "rt+rld" );
+#ifdef SPEC_CPU2000
+      undoReversibleTransformation_small ( 0 );
+#else
+      undoReversibleTransformation_small ( NULL );
+#endif
+
+      computedBlockCRC = getFinalCRC();
+      if (verbosity >= 3)
+         fprintf ( stderr, " {0x%x, 0x%x}", storedBlockCRC, computedBlockCRC );
+      if (verbosity >= 2) fprintf ( stderr, "] " );
+
+      if (storedBlockCRC != computedBlockCRC) {
+         bsFinishedWithStream();
+         fclose ( zStream );
+         fprintf ( stderr, "\n%s, block %d: computed CRC does not match stored one\n",
+                           inName, currBlockNo );
+         return False;
+      }
+
+      if (verbosity >= 2) fprintf ( stderr, "ok\n" );
+      computedCombinedCRC = (computedCombinedCRC << 1) | (computedCombinedCRC >> 31);
+      computedCombinedCRC ^= computedBlockCRC;
+   };
+
+   storedCombinedCRC  = bsGetUInt32 ();
+   if (verbosity >= 2)
+      fprintf ( stderr,
+                "    combined CRCs: stored = 0x%x, computed = 0x%x\n    ",
+                storedCombinedCRC, computedCombinedCRC );
+   if (storedCombinedCRC != computedCombinedCRC) {
+      bsFinishedWithStream();
+      fclose ( zStream );
+      fprintf ( stderr, "\n%s: computed CRC does not match stored one\n",
+                        inName );
+      return False;
+   }
+
+   bsFinishedWithStream ();
+   ERROR_IF_NOT_ZERO ( ferror(zStream) );
+   retVal = fclose ( zStream );
+   ERROR_IF_EOF ( retVal );
+   return True;
+}
+
+
 
 /*---------------------------------------------------*/
 /*--- Error [non-] handling grunge                ---*/
@@ -2535,6 +3911,21 @@ void mySIGSEGVorSIGBUScatcher ( IntNative n )
       cleanUpAndFail( 3 ); else
       { cadvise(); cleanUpAndFail( 2 ); }
 }
+
+
+/*---------------------------------------------*/
+void uncompressOutOfMemory ( Int32 draw, Int32 blockSize )
+{
+   fprintf ( stderr,
+             "\n%s: Can't allocate enough memory for decompression.\n"
+             "\tRequested %d bytes for a block size of %d.\n"
+             "\tTry selecting space-economic decompress (with flag -s)\n"
+             "\tand failing that, find a machine with more memory.\n",
+             progName, draw, blockSize );
+   showFileNames();
+   cleanUpAndFail(1);
+}
+
 
 /*---------------------------------------------*/
 void compressOutOfMemory ( Int32 draw, Int32 blockSize )
@@ -2758,6 +4149,146 @@ void compress ( Char *name )
          ERROR_IF_NOT_ZERO ( retVal );
       }
    }
+}
+
+
+/*---------------------------------------------*/
+void uncompress ( Char *name )
+{
+#ifdef SPEC_CPU2000
+   int inStr;
+   int outStr;
+#else
+   FILE *inStr;
+   FILE *outStr;
+#endif
+   Bool magicNumberOK;
+
+   if (name == NULL && srcMode != SM_I2O)
+      panic ( "uncompress: bad modes\n" );
+
+   switch (srcMode) {
+      case SM_I2O: strcpy ( inName, "(stdin)" );
+                   strcpy ( outName, "(stdout)" ); break;
+      case SM_F2F: strcpy ( inName, name );
+                   strcpy ( outName, name );
+                   if (endsInBz2 ( outName ))
+                      outName [ strlen ( outName ) - 4 ] = '\0';
+                   break;
+      case SM_F2O: strcpy ( inName, name );
+                   strcpy ( outName, "(stdout)" ); break;
+   }
+
+   if ( srcMode != SM_I2O && containsDubiousChars ( inName ) ) {
+      fprintf ( stderr, "%s: There are no files matching `%s'.\n",
+                progName, inName );
+      return;
+   }
+   if ( srcMode != SM_I2O && !fileExists ( inName ) ) {
+      fprintf ( stderr, "%s: Input file %s doesn't exist, skipping.\n",
+                progName, inName );
+      return;
+   }
+   if ( srcMode != SM_I2O && !endsInBz2 ( inName )) {
+      fprintf ( stderr,
+                "%s: Input file name %s doesn't end in `.bz2', skipping.\n",
+                progName, inName );
+      return;
+   }
+   if ( srcMode != SM_I2O && notABogStandardFile ( inName )) {
+      fprintf ( stderr, "%s: Input file %s is not a normal file, skipping.\n",
+                progName, inName );
+      return;
+   }
+   if ( srcMode == SM_F2F && fileExists ( outName ) ) {
+      fprintf ( stderr, "%s: Output file %s already exists, skipping.\n",
+                progName, outName );
+      return;
+   }
+
+   switch ( srcMode ) {
+
+      case SM_I2O:
+         inStr = stdin;
+         outStr = stdout;
+         if ( isatty ( fileno ( stdin ) ) ) {
+            fprintf ( stderr,
+                      "%s: I won't read compressed data from a terminal.\n",
+                      progName );
+            fprintf ( stderr, "%s: For help, type: `%s --help'.\n",
+                              progName, progName );
+            return;
+         };
+         break;
+
+      case SM_F2O:
+         inStr = fopen ( inName, "rb" );
+         outStr = stdout;
+         if ( inStr == NULL ) {
+            fprintf ( stderr, "%s: Can't open input file %s, skipping.\n",
+                      progName, inName );
+            return;
+         };
+         break;
+
+      case SM_F2F:
+         inStr = fopen ( inName, "rb" );
+         outStr = fopen ( outName, "wb" );
+         if ( outStr == NULL) {
+            fprintf ( stderr, "%s: Can't create output file %s, skipping.\n",
+                      progName, outName );
+            return;
+         }
+         if ( inStr == NULL ) {
+            fprintf ( stderr, "%s: Can't open input file %s, skipping.\n",
+                      progName, inName );
+            return;
+         };
+         break;
+
+      default:
+         panic ( "uncompress: bad srcMode" );
+         break;
+   }
+
+   if (verbosity >= 1) {
+      fprintf ( stderr, "  %s: ", inName );
+      pad ( inName );
+      fflush ( stderr );
+   }
+
+   /*--- Now the input and output handles are sane.  Do the Biz. ---*/
+   outputHandleJustInCase = outStr;
+   magicNumberOK = uncompressStream ( inStr, outStr );
+   outputHandleJustInCase = NULL;
+
+   /*--- If there was an I/O error, we won't get here. ---*/
+   if ( magicNumberOK ) {
+      if ( srcMode == SM_F2F ) {
+         copyDateAndPermissions ( inName, outName );
+         if ( !keepInputFiles ) {
+            IntNative retVal = remove ( inName );
+            ERROR_IF_NOT_ZERO ( retVal );
+         }
+      }
+   } else {
+      if ( srcMode == SM_F2F ) {
+         IntNative retVal = remove ( outName );
+         ERROR_IF_NOT_ZERO ( retVal );
+      }
+   }
+
+   if ( magicNumberOK ) {
+      if (verbosity >= 1)
+         fprintf ( stderr, "done\n" );
+   } else {
+      if (verbosity >= 1)
+         fprintf ( stderr, "not a bzip2 file, skipping.\n" ); else
+         fprintf ( stderr,
+                   "%s: %s is not a bzip2 file, skipping.\n",
+                   progName, inName );
+   }
+
 }
 
 
