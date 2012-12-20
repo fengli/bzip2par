@@ -1581,31 +1581,6 @@ void df_simpleSort ( UChar *block, Int32 last, Int32 *zptr, UInt16 *quadrant,
       i = lo + h;
       while (True) {
 
-         /*-- copy 1 --*/
-         if (i > hi) break;
-         v = zptr[i];
-         j = i;
-         while ( df_fullGtU ( block, last, quadrant, workDone_p, zptr[j-h]+d, v+d ) ) {
-            zptr[j] = zptr[j-h];
-            j = j - h;
-            if (j <= (lo + h - 1)) break;
-         }
-         zptr[j] = v;
-         i++;
-
-         /*-- copy 2 --*/
-         if (i > hi) break;
-         v = zptr[i];
-         j = i;
-         while ( df_fullGtU ( block ,last, quadrant, workDone_p, zptr[j-h]+d, v+d ) ) {
-            zptr[j] = zptr[j-h];
-            j = j - h;
-            if (j <= (lo + h - 1)) break;
-         }
-         zptr[j] = v;
-         i++;
-
-         /*-- copy 3 --*/
          if (i > hi) break;
          v = zptr[i];
          j = i;

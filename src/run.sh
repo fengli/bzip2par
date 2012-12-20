@@ -2,7 +2,7 @@
 
 ./bzip2 input.txt
 mv out.compress.7 out.compress.7.1
-./stream_bzip2 input.txt
+./bzip2k input.txt
 echo "===>testing correctness by comparing zipped file"
 difference=`diff out.compress.7*`
 if ["$difference" -eq ""]
