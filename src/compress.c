@@ -1579,9 +1579,8 @@ void df_simpleSort ( UChar *block, Int32 last, Int32 *zptr, UInt16 *quadrant,
          fprintf ( stderr, "          shell increment %d\n", h );
 
       i = lo + h;
-      while (True) {
+      for (i = lo + h; i <= hi; i++){
 
-         if (i > hi) break;
          v = zptr[i];
          j = i;
          while ( df_fullGtU ( block, last, quadrant, workDone_p, zptr[j-h]+d, v+d ) ) {
@@ -1590,7 +1589,6 @@ void df_simpleSort ( UChar *block, Int32 last, Int32 *zptr, UInt16 *quadrant,
             if (j <= (lo + h - 1)) break;
          }
          zptr[j] = v;
-         i++;
 
          if (*workDone_p > workLimit && firstAttempt) return;
       }
