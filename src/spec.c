@@ -36,6 +36,7 @@ int spec_write(int fd, unsigned char *buf, int size);
 int spec_putc(unsigned char ch, int fd);
 int debug_time();
 
+#define DEBUG
 #ifdef DEBUG
 int dbglvl=4;
 #define debug(level,str)           { if (level<dbglvl) printf(str); }
