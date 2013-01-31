@@ -11,6 +11,10 @@ TEST= bzip2o bzip2k bzip2
 CFLAGS =  -Wall -std=c99  -ffast-math -Wl,-rpath,$(INST_DIR)/lib64 -g  -DTIMING_OUTPUT#-fdump-tree-all #-Werror
 LDFLAGS = -L${LIB_DIR} -lm -lc -rdynamic -Wl,-rpath,$(LIB_DIR)
 
+WSTREAM_LIB=/home/li/tstar/open-stream/libworkstream_df/
+CFLAGS_WSTREAM = -Wall -g -std=c99 -O0 -ffast-math #-D_DEBUG
+LDFLAGS_WSTREAM = -L$(WSTREAM_LIB) -lm -lc -rdynamic -Wl,-rpath,$(WSTREAM_LIB) -lwstream_df
+
 CFLAGS_DEBUG = -Wall -g
 
 all: $(TEST)
@@ -27,8 +31,11 @@ stream_bzip2: stream_spec.c stream_bzip2.c common.h
 bzip2k: compress.c spec.min.c common.h
 	gcc $(CFLAGS_DEBUG) -o $@ $^
 
+df_bzip2: df_compress.c spec.min.c common.h tsu.h
+	gcc $(CFLAGS_WSTREAM) $(LDFLAGS_WSTREAM) $^ -o $@
+
 run: bzip2k bzip2
 	./run.sh
 clean:
-	rm out.*
-	rm $(TEST)
+	rm -f out.*
+	rm -f $(TEST)
