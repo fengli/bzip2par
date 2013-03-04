@@ -1761,7 +1761,7 @@ void df_sortIt ( UChar *block, Int32 last, Int32 *zptr,
 
    block[-1] = block[last];
 
-   if (last < 40) {
+   if (last < 4000) {
 
       /*--
          Use simpleSort(), since the full sorting mechanism

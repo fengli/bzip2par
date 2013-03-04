@@ -1772,7 +1772,17 @@ void df_sortIt ( UChar *block, Int32 last, Int32 *zptr,
       *firstAttempt_p = False;
       *workDone_p = *workLimit_p = 0;
 
-      merge_sort_parallel (zptr, 0, last, block, last, quadrant, workDone_p, df_fullGtU, 0);
+      struct timeval *start = (struct timeval *) malloc (sizeof (struct timeval));
+      struct timeval *end = (struct timeval *) malloc (sizeof (struct timeval));
+      struct timeval *end2 = (struct timeval *) malloc (sizeof (struct timeval));
+
+      //gettimeofday (start, NULL);
+      //merge_sort_parallel (zptr, 0, last, block, last, quadrant, workDone_p, df_fullGtU, 0);
+      //gettimeofday (end, NULL);
+      //fprintf (stderr, "*** [merge sort] takes %.5f secs\n", tdiff (end, start));
+      df_simpleSort ( block, last, zptr, quadrant, workDone_p, *workLimit_p, *firstAttempt_p, 0, last, 0 );
+      //gettimeofday (end2, NULL);
+      //fprintf (stderr, "*** [merge sort] takes %.5f secs\n", tdiff (end2, end));
       //df_simpleSort ( block, last, zptr, quadrant, workDone_p, *workLimit_p, *firstAttempt_p, 0, last, 0 );
       if (verbosity >= 4) fprintf ( stderr, "        simpleSort done.\n" );
 
@@ -2038,7 +2048,8 @@ Bool doReversibleTransformation ( UChar *block, Int32 last, Int32 *zptr, Int32 *
    Bool firstAttempt    = True;
    Bool blockRandomised = False;
 
-   df_sortIt (block, last, zptr, &workDone, &workLimit, &firstAttempt);
+   merge_sort_parallel (zptr, 0, last, block, last, , &workDone);
+   //df_sortIt (block, last, zptr, &workDone, &workLimit, &firstAttempt);
 
    if (verbosity >= 3)
       fprintf ( stderr, "      %d work, %d block, ratio %5.2f\n",

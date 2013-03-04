@@ -1,8 +1,9 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <omp.h>
+#include "common.h"
 
-#define NUM 100
+#define NUM 1000000
 #define DEBUG 0
 #define Int32   int
 #define UInt32  unsigned int
@@ -12,7 +13,7 @@
 #define UInt16  unsigned short
 #define Bool    char
 
-#define THRESH 1
+#define THRESH 1000
 
 typedef int cmp_func (UChar *tblock, Int32 tlast,
 		      UInt16 *tquadrant, Int32 *tworkDone,
@@ -45,24 +46,39 @@ void merge_sort_serial (Int32 *A, Int32 left, Int32 right, UChar *tblock, Int32 
 void merge_sort_parallel (Int32 *A, Int32 left, Int32 right, UChar *tblock, Int32 tlast,
 			  UInt16 *tquadrant, Int32 *tworkDone, cmp_func cmp, Int32 d)
 {
+#pragma omp parallel shared (A)
+  {
+#pragma omp single
+    {
+      merge_sort_parallel_1 (A, left, right, tblock, tlast, tquadrant, tworkDone, cmp, d);
+    }
+  }
+}
+
+void merge_sort_parallel_1 (Int32 *A, Int32 left, Int32 right, UChar *tblock, Int32 tlast,
+			  UInt16 *tquadrant, Int32 *tworkDone, cmp_func cmp, Int32 d)
+{
   if (right-left <= THRESH)
     {
-      merge_sort_serial (A, left, right, tblock, tlast, tquadrant, tworkDone, cmp, d);
+      Bool flag;
+      int wlim = 1000000000;
+      df_sortIt (tblock+left, right-left, A+left, tworkDone, &wlim, &flag);
+      //df_qSort3 ( tblock, tlast, A, tquadrant, tworkDone, 1000000, 0, left, right, 0 );
+      //df_simpleSort ( tblock, tlast, A, tquadrant, tworkDone, 1000000, 0, left, right, 0 );
+      //merge_sort_serial (A, left, right, tblock, tlast, tquadrant, tworkDone, cmp, d);
       return;
     }
   //if (right <= left) return;
 
   Int32 mid = (left+right)/2;
 
-#pragma omp parallel sections
-  {
-#pragma omp section
-    merge_sort_parallel (A, left, mid, tblock, tlast, tquadrant, tworkDone, cmp, d);
+#pragma omp task shared (A)
+    merge_sort_parallel_1 (A, left, mid, tblock, tlast, tquadrant, tworkDone, cmp, d);
 
-#pragma omp section
-    merge_sort_parallel (A, mid+1, right, tblock, tlast, tquadrant, tworkDone, cmp, d);
-  }
+#pragma omp task shared (A)
+    merge_sort_parallel_1 (A, mid+1, right, tblock, tlast, tquadrant, tworkDone, cmp, d);
 
+#pragma omp taskwait
   merge (A, left, mid+1, right, tblock, tlast, tquadrant, tworkDone, cmp, d);
 }
 
@@ -153,10 +169,20 @@ void merge (Int32 *A, Int32 left, Int32 mid, Int32 right, UChar *tblock, Int32 t
 /*   int i; */
   
 /*   for (i = 0; i < NUM; i++) A[i]=i*1023%97; */
-/*   printarray(A); */
+/*   //printarray(A); */
 
+/*   struct timeval *start = (struct timeval *) malloc (sizeof (struct timeval)); */
+/*   struct timeval *end = (struct timeval *) malloc (sizeof (struct timeval)); */
+/*   gettimeofday (start, NULL); */
 /*   merge_sort_parallel (A, 0, sizeof (A)/sizeof(A[0])-1, NULL, 0, NULL, NULL, cmp, 0); */
+/*   gettimeofday (end, NULL); */
+/*   fprintf (stderr, "** [parallel version]: execution time: %.5f seconds\n", tdiff (end,start)); */
 
-/*   printarray(A); */
+/*   gettimeofday (start, NULL); */
+/*   merge_sort_serial (A, 0, sizeof (A)/sizeof(A[0])-1, NULL, 0, NULL, NULL, cmp, 0); */
+/*   gettimeofday (end, NULL); */
+/*   fprintf (stderr, "** [serial version]: execution time: %.5f seconds\n", tdiff (end,start)); */
+
+/*   //printarray(A); */
 /*   fprintf (stderr, "\n"); */
 /* } */
