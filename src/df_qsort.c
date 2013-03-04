@@ -19,6 +19,8 @@
 #include <limits.h>
 #include <stdlib.h>
 #include <string.h>
+#include "qsort.h"
+
 /* Byte-wise swap two items of size SIZE. */
 #define SWAP(a, b, size)						      \
   do									      \
@@ -69,9 +71,11 @@ typedef struct
       stack first, with the algorithm then concentrating on the
       smaller partition.  This *guarantees* no more than log (total_elems)
       stack size is needed (actually O(1) in this case)!  */
+
 void
 _quicksort (void *const pbase, size_t total_elems, size_t size,
-	    __compar_fn_t cmp)
+	    __compar_fn_cus_t cmp, void *arg_block, void *arg_last,
+	    void *arg_quadrant, void *arg_workDone)
 {
   register char *base_ptr = (char *) pbase;
   const size_t max_thresh = MAX_THRESH * size;
@@ -95,13 +99,19 @@ _quicksort (void *const pbase, size_t total_elems, size_t size,
 	     skips a comparison for both the LEFT_PTR and RIGHT_PTR in
 	     the while loops. */
 	  char *mid = lo + size * ((hi - lo) / size >> 1);
-	  if ((*cmp) ((void *) mid, (void *) lo) < 0)
+	  if ((*cmp) ((void *)arg_block, (void *) arg_last,
+		      (void *)arg_quadrant, (void *)arg_workDone,
+		      (void *) mid, (void *) lo) < 0)
 	    SWAP (mid, lo, size);
-	  if ((*cmp) ((void *) hi, (void *) mid) < 0)
+	  if ((*cmp) ((void *)arg_block, (void *) arg_last,
+		      (void *)arg_quadrant, (void *)arg_workDone,
+		      (void *) hi, (void *) mid) < 0)
 	    SWAP (mid, hi, size);
 	  else
 	    goto jump_over;
-	  if ((*cmp) ((void *) mid, (void *) lo) < 0)
+	  if ((*cmp) ((void *)arg_block, (void *) arg_last,
+		      (void *)arg_quadrant, (void *)arg_workDone,
+		      (void *) mid, (void *) lo) < 0)
 	    SWAP (mid, lo, size);
 	jump_over:;
 	  left_ptr  = lo + size;
@@ -111,9 +121,13 @@ _quicksort (void *const pbase, size_t total_elems, size_t size,
 	     that this algorithm runs much faster than others. */
 	  do
 	    {
-	      while ((*cmp) ((void *) left_ptr, (void *) mid) < 0)
+	      while ((*cmp) ((void *)arg_block, (void *) arg_last,
+			     (void *)arg_quadrant, (void *)arg_workDone,
+			     (void *) left_ptr, (void *) mid) < 0)
 		left_ptr += size;
-	      while ((*cmp) ((void *) mid, (void *) right_ptr) < 0)
+	      while ((*cmp) ((void *)arg_block, (void *) arg_last,
+			     (void *)arg_quadrant, (void *)arg_workDone,
+			     (void *) mid, (void *) right_ptr) < 0)
 		right_ptr -= size;
 	      if (left_ptr < right_ptr)
 		{
@@ -178,7 +192,9 @@ _quicksort (void *const pbase, size_t total_elems, size_t size,
        array's beginning.  This is the smallest array element,
        and the operation speeds up insertion sort's inner loop. */
     for (run_ptr = tmp_ptr + size; run_ptr <= thresh; run_ptr += size)
-      if ((*cmp) ((void *) run_ptr, (void *) tmp_ptr) < 0)
+      if ((*cmp) ((void *)arg_block, (void *) arg_last,
+		  (void *)arg_quadrant, (void *)arg_workDone,
+		  (void *) run_ptr, (void *) tmp_ptr) < 0)
         tmp_ptr = run_ptr;
     if (tmp_ptr != base_ptr)
       SWAP (tmp_ptr, base_ptr, size);
@@ -187,7 +203,10 @@ _quicksort (void *const pbase, size_t total_elems, size_t size,
     while ((run_ptr += size) <= end_ptr)
       {
 	tmp_ptr = run_ptr - size;
-	while ((*cmp) ((void *) run_ptr, (void *) tmp_ptr) < 0)
+
+	while ((*cmp) ((void *)arg_block, (void *) arg_last,
+		       (void *)arg_quadrant, (void *)arg_workDone,
+		       (void *) run_ptr, (void *) tmp_ptr) < 0)
 	  tmp_ptr -= size;
 	tmp_ptr += size;
         if (tmp_ptr != run_ptr)

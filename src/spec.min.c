@@ -33,7 +33,7 @@ int spec_write(int fd, unsigned char *buf, int size);
 int spec_putc(unsigned char ch, int fd);
 int debug_time();
 
-//#define DEBUG 1
+#define DEBUG 1
 #define DEBUG_DUMP 1
 
 #ifdef DEBUG
@@ -258,7 +258,7 @@ int spec_putc(unsigned char ch, int fd) {
     return ch;
 }
 
-#define MB (1<<20)
+#define MB (1<<12)
 
 #ifdef SPEC_CPU2000
 int main (int argc, char *argv[]) {

@@ -1,8 +1,8 @@
 #!/bin/bash
 
-./bzip2 input.txt
+./obzip2 input.txt
 mv out.compress.7 out.compress.7.1
-./bzip2k input.txt
+./bbzip2 input.txt
 echo "===>testing correctness by comparing zipped file"
 difference=`diff out.compress.7*`
 if ["$difference" -eq ""]

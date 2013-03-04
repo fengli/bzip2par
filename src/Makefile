@@ -7,7 +7,7 @@ GCC = ${BIN_DIR}/gcc
 LIBWSTREAM_DF_DIR = $(LIB_DIR)
 
 ###########################################################################
-TEST= bzip2o bzip2k bzip2
+TEST= obzip2 bbzip2
 CFLAGS =  -Wall -std=c99  -ffast-math -Wl,-rpath,$(INST_DIR)/lib64 -g  -DTIMING_OUTPUT#-fdump-tree-all #-Werror
 LDFLAGS = -L${LIB_DIR} -lm -lc -rdynamic -Wl,-rpath,$(LIB_DIR)
 
@@ -31,10 +31,16 @@ stream_bzip2: stream_spec.c stream_bzip2.c common.h
 bzip2k: compress.c spec.min.c common.h
 	gcc $(CFLAGS_DEBUG) -o $@ $^
 
+obzip2: compress.c spec.min.c common.h
+	gcc $(CFLAGS_DEBUG) -o $@ $^
+
+bbzip2: compress_bsort.c bsort.c spec.min.c common.h
+	gcc $(CFLAGS_DEBUG) -o $@ $^
+
 df_bzip2: df_compress.c spec.min.c common.h tsu.h
 	gcc $(CFLAGS_WSTREAM) $(LDFLAGS_WSTREAM) $^ -o $@
 
-run: bzip2k bzip2
+run: obzip2 bbzip2
 	./run.sh
 clean:
 	rm -f out.*
