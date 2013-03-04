@@ -117,7 +117,7 @@
 #include <string.h>
 #include <signal.h>
 #include <math.h>
-
+#include "common.h"
 
 #define ERROR_IF_EOF(i)       { if ((i) == EOF)  ioError(); }
 #define ERROR_IF_NOT_ZERO(i)  { if ((i) != 0)    ioError(); }
@@ -1566,7 +1566,7 @@ void df_simpleSort ( UChar *block, Int32 last, Int32 *zptr, UInt16 *quadrant,
    Int32 i, j, h, bigN, hp;
    Int32 v;
 
-   fprintf (stderr,"(%d,%d,%d)\n",d,lo,hi);
+   //fprintf (stderr,"(%d,%d,%d)\n",d,lo,hi);
 
    bigN = hi - lo + 1;
    if (bigN < 2) return;
@@ -1761,7 +1761,7 @@ void df_sortIt ( UChar *block, Int32 last, Int32 *zptr,
 
    block[-1] = block[last];
 
-   if (last < 40) {
+   if (True) {
 
       /*--
          Use simpleSort(), since the full sorting mechanism
@@ -1771,7 +1771,9 @@ void df_sortIt ( UChar *block, Int32 last, Int32 *zptr,
       for (i = 0; i <= last; i++) zptr[i] = i;
       *firstAttempt_p = False;
       *workDone_p = *workLimit_p = 0;
-      df_simpleSort ( block, last, zptr, quadrant, workDone_p, *workLimit_p, *firstAttempt_p, 0, last, 0 );
+
+      merge_sort_parallel (zptr, 0, last, block, last, quadrant, workDone_p, df_fullGtU, 0);
+      //df_simpleSort ( block, last, zptr, quadrant, workDone_p, *workLimit_p, *firstAttempt_p, 0, last, 0 );
       if (verbosity >= 4) fprintf ( stderr, "        simpleSort done.\n" );
 
    } else {
@@ -2257,7 +2259,12 @@ void compressStream ( FILE *stream, FILE *zStream )
                            blockNo, blockCRC, combinedCRC, last+1 );
 
       /*-- sort the block and establish posn of original string --*/
+      struct timeval *start = (struct timeval *) malloc (sizeof (struct timeval));
+      struct timeval *end = (struct timeval *) malloc (sizeof (struct timeval));
+      gettimeofday (start, NULL);
       blockRandomised = doReversibleTransformation (block, last, zptr, &origPtr, inUse);
+      gettimeofday (end, NULL);
+      fprintf (stderr, "** [parallel version]: execution time: %.5f seconds\n", tdiff (end,start));
 
       /*-- Finally, block's contents proper. --*/
       /* moveToFrontCodeAndSend (block, last, szptr, origPtr, inUse); */

@@ -28,14 +28,11 @@ bzip2o:bzip2.o.c spec.c common.h
 stream_bzip2: stream_spec.c stream_bzip2.c common.h
 	$(GCC) $(CFLAGS) $(LDFLAGS) $^ -o $@ -fopenmp -Wl,-rpath,$(LIBWSTREAM_DF_DIR) -L${LIBWSTREAM_DF_DIR} -lwstream_df
 
-bzip2k: compress.c spec.min.c common.h
-	gcc $(CFLAGS_DEBUG) -o $@ $^
-
 obzip2: compress.c spec.min.c common.h
 	gcc $(CFLAGS_DEBUG) -o $@ $^
 
-bbzip2: compress_bsort.c bsort.c spec.min.c common.h
-	gcc $(CFLAGS_DEBUG) -o $@ $^
+bbzip2: compress_bsort2.c pmsort.c spec.min.c common.h
+	gcc $(CFLAGS_DEBUG) -fopenmp -o $@ $^
 
 df_bzip2: df_compress.c spec.min.c common.h tsu.h
 	gcc $(CFLAGS_WSTREAM) $(LDFLAGS_WSTREAM) $^ -o $@

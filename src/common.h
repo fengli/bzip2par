@@ -1,4 +1,7 @@
 //#define DEBUG 1
+#ifndef COMMON_HEADER__
+#define COMMON_HEADER__
+
 #define DEBUG_DUMP 1
 #define INPUT_SIZE 2
 #define TIMING_OUTPUT 1
@@ -11,3 +14,4 @@ tdiff (struct timeval *end, struct timeval *start)
     (double)(end->tv_usec - start->tv_usec) / 1e6;
 }
 
+#endif

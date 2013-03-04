@@ -14,6 +14,13 @@
 
 #define  IM_SPEC_ALREADY
 
+/* static inline double */
+/* tdiff (struct timeval *end, struct timeval *start) */
+/* { */
+/*   return (double)end->tv_sec - (double)start->tv_sec + */
+/*     (double)(end->tv_usec - start->tv_usec) / 1e6; */
+/* } */
+
 #define Bool unsigned char
 /* Prototypes for stuff in bzip2.c */
 void compressStream ( int zStream, int stream );
@@ -258,7 +265,7 @@ int spec_putc(unsigned char ch, int fd) {
     return ch;
 }
 
-#define MB (1<<12)
+#define MB (1<<16)
 
 #ifdef SPEC_CPU2000
 int main (int argc, char *argv[]) {
