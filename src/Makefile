@@ -32,7 +32,7 @@ obzip2: compress.c spec.min.c common.h
 	gcc $(CFLAGS_DEBUG) -o $@ $^
 
 bbzip2: compress_bsort2.c pmsort.c spec.min.c common.h
-	gcc $(CFLAGS_DEBUG) -o $@ $^
+	gcc $(CFLAGS_DEBUG)  -o $@ $^
 
 df_bzip2: df_compress.c spec.min.c common.h tsu.h
 	gcc $(CFLAGS_WSTREAM) $(LDFLAGS_WSTREAM) $^ -o $@

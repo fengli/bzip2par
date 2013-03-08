@@ -1734,8 +1734,12 @@ void df_qSort3 ( UChar *block, Int32 last, Int32 *zptr, UInt16* quadrant,
 
 #define SETMASK (1 << 21)
 #define CLEARMASK (~(SETMASK))
-void df_sortIt ( UChar *block, Int32 last, Int32 *zptr,
-	      Int32 *workDone_p, Int32 *workLimit_p, Bool *firstAttempt_p )
+
+
+void
+optimized_seq_sort ( UChar *block, Int32 last, Int32 *zptr, UInt16 *quadrant,
+		     Int32 *workDone_p, Int32 *workLimit_p, Bool *firstAttempt_p,
+		     Int32 lo, Int32 hi, Int32 d, Int32 *ftab)
 {
    Int32 i, j, ss, sb;
    Int32 runningOrder[256];
@@ -1744,24 +1748,7 @@ void df_sortIt ( UChar *block, Int32 last, Int32 *zptr,
    UChar c1, c2;
    Int32 numQSorted;
 
-   /****: ftab could be local since it's just used in this function.  ****/
-   Int32 *ftab = malloc ( 65537 * sizeof(Int32) );
-   UInt16 *quadrant = malloc (((SIZE100K * blockSize100k)+NUM_OVERSHOOT_BYTES)*sizeof (Int16));
-   /*--
-      In the various block-sized structures, live data runs
-      from 0 to last+NUM_OVERSHOOT_BYTES inclusive.  First,
-      set up the overshoot area for block.
-   --*/
-
-   if (verbosity >= 4) fprintf ( stderr, "        sort initialise ...\n" );
-   for (i = 0; i < NUM_OVERSHOOT_BYTES; i++)
-       block[last+i+1] = block[i % (last+1)];
-   for (i = 0; i <= last+NUM_OVERSHOOT_BYTES; i++)
-       quadrant[i] = 0;
-
-   block[-1] = block[last];
-
-   if (True) {
+   if (last < 4000) {
 
       /*--
          Use simpleSort(), since the full sorting mechanism
@@ -1772,18 +1759,7 @@ void df_sortIt ( UChar *block, Int32 last, Int32 *zptr,
       *firstAttempt_p = False;
       *workDone_p = *workLimit_p = 0;
 
-      struct timeval *start = (struct timeval *) malloc (sizeof (struct timeval));
-      struct timeval *end = (struct timeval *) malloc (sizeof (struct timeval));
-      struct timeval *end2 = (struct timeval *) malloc (sizeof (struct timeval));
-
-      //gettimeofday (start, NULL);
-      //merge_sort_parallel (zptr, 0, last, block, last, quadrant, workDone_p, df_fullGtU, 0);
-      //gettimeofday (end, NULL);
-      //fprintf (stderr, "*** [merge sort] takes %.5f secs\n", tdiff (end, start));
       df_simpleSort ( block, last, zptr, quadrant, workDone_p, *workLimit_p, *firstAttempt_p, 0, last, 0 );
-      //gettimeofday (end2, NULL);
-      //fprintf (stderr, "*** [merge sort] takes %.5f secs\n", tdiff (end2, end));
-      //df_simpleSort ( block, last, zptr, quadrant, workDone_p, *workLimit_p, *firstAttempt_p, 0, last, 0 );
       if (verbosity >= 4) fprintf ( stderr, "        simpleSort done.\n" );
 
    } else {
@@ -1934,6 +1910,36 @@ void df_sortIt ( UChar *block, Int32 last, Int32 *zptr,
          fprintf ( stderr, "        %d pointers, %d sorted, %d scanned\n",
 		   last+1, numQSorted, (last+1) - numQSorted );
    }
+}
+
+void df_sortIt ( UChar *block, Int32 last, Int32 *zptr,
+	      Int32 *workDone_p, Int32 *workLimit_p, Bool *firstAttempt_p )
+{
+   Int32 i, j, ss, sb;
+   Int32 runningOrder[256];
+   Int32 copy[256];
+   Bool bigDone[256];
+   UChar c1, c2;
+   Int32 numQSorted;
+
+   /****: ftab could be local since it's just used in this function.  ****/
+   Int32 *ftab = malloc ( 65537 * sizeof(Int32) );
+   UInt16 *quadrant = malloc (((SIZE100K * blockSize100k)+NUM_OVERSHOOT_BYTES)*sizeof (Int16));
+   /*--
+      In the various block-sized structures, live data runs
+      from 0 to last+NUM_OVERSHOOT_BYTES inclusive.  First,
+      set up the overshoot area for block.
+   --*/
+
+   if (verbosity >= 4) fprintf ( stderr, "        sort initialise ...\n" );
+   for (i = 0; i < NUM_OVERSHOOT_BYTES; i++)
+       block[last+i+1] = block[i % (last+1)];
+   for (i = 0; i <= last+NUM_OVERSHOOT_BYTES; i++)
+       quadrant[i] = 0;
+
+   block[-1] = block[last];
+
+   merge_sort_parallel (zptr, 0, last, block, last, quadrant, workDone_p, df_fullGtU, 0, ftab);
 
    free (ftab);
    free (quadrant);
@@ -2048,8 +2054,7 @@ Bool doReversibleTransformation ( UChar *block, Int32 last, Int32 *zptr, Int32 *
    Bool firstAttempt    = True;
    Bool blockRandomised = False;
 
-   merge_sort_parallel (zptr, 0, last, block, last, , &workDone);
-   //df_sortIt (block, last, zptr, &workDone, &workLimit, &firstAttempt);
+   df_sortIt (block, last, zptr, &workDone, &workLimit, &firstAttempt);
 
    if (verbosity >= 3)
       fprintf ( stderr, "      %d work, %d block, ratio %5.2f\n",
