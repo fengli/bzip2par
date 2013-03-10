@@ -44,19 +44,22 @@ void merge_sort_serial (Int32 *A, Int32 left, Int32 right, UChar *tblock, Int32 
 }
 
 void merge_sort_parallel (Int32 *A, Int32 left, Int32 right, UChar *tblock, Int32 tlast,
-			  UInt16 *tquadrant, Int32 *tworkDone, cmp_func cmp, Int32 d, Int32 *ftab)
+			  UInt16 *tquadrant, Int32 *tworkLimit, Int32 *tfirstAttempt,
+			  Int32 *tworkDone, cmp_func cmp, Int32 d, Int32 *ftab)
 {
 #pragma omp parallel shared (A)
   {
 #pragma omp single
     {
-      merge_sort_parallel_1 (A, left, right, tblock, tlast, tquadrant, tworkDone, cmp, d, ftab);
+      merge_sort_parallel_1 (A, left, right, tblock, tlast, tquadrant, tworkLimit, tfirstAttempt,
+			     tworkDone, cmp, d, ftab);
     }
   }
 }
 
 void merge_sort_parallel_1 (Int32 *A, Int32 left, Int32 right, UChar *tblock, Int32 tlast,
-			  UInt16 *tquadrant, Int32 *tworkDone, cmp_func cmp, Int32 d, Int32 *ftab)
+			    UInt16 *tquadrant, Int32 *tworkLimit, Int32 *tfirstAttempt,
+			    Int32 *tworkDone, cmp_func cmp, Int32 d, Int32 *ftab)
 {
   if (right-left <= THRESH)
     {
@@ -64,7 +67,7 @@ void merge_sort_parallel_1 (Int32 *A, Int32 left, Int32 right, UChar *tblock, In
       int wlim = 1000000000;
       //df_sortIt (tblock+left, right-left, A+left, tworkDone, &wlim, &flag);
       //df_qSort3 ( tblock, tlast, A, tquadrant, tworkDone, 1000000, 0, left, right, 0 );
-      optimized_seq_sort ( tblock, tlast, A, tquadrant, tworkDone, &wlim, &flag, left, right, 0, ftab);
+      optimized_seq_sort ( tblock, tlast, A, tquadrant, tworkDone, tworkLimit, tfirstAttempt, left, right, 0, ftab);
       //df_simpleSort ( tblock, tlast, A, tquadrant, tworkDone, 1000000, 0, left, right, 0 );
       //merge_sort_serial (A, left, right, tblock, tlast, tquadrant, tworkDone, cmp, d);
       return;
@@ -74,10 +77,10 @@ void merge_sort_parallel_1 (Int32 *A, Int32 left, Int32 right, UChar *tblock, In
   Int32 mid = (left+right)/2;
 
 #pragma omp task shared (A)
-  merge_sort_parallel_1 (A, left, mid, tblock, tlast, tquadrant, tworkDone, cmp, d, ftab);
+  merge_sort_parallel_1 (A, left, mid, tblock, tlast, tquadrant, tworkLimit, tfirstAttempt, tworkDone, cmp, d, ftab);
 
 #pragma omp task shared (A)
-  merge_sort_parallel_1 (A, mid+1, right, tblock, tlast, tquadrant, tworkDone, cmp, d, ftab);
+  merge_sort_parallel_1 (A, mid+1, right, tblock, tlast, tquadrant, tworkLimit, tfirstAttempt, tworkDone, cmp, d, ftab);
 
 #pragma omp taskwait
   merge (A, left, mid+1, right, tblock, tlast, tquadrant, tworkDone, cmp, d);

@@ -1939,7 +1939,9 @@ void df_sortIt ( UChar *block, Int32 last, Int32 *zptr,
 
    block[-1] = block[last];
 
-   merge_sort_parallel (zptr, 0, last, block, last, quadrant, workDone_p, df_fullGtU, 0, ftab);
+   //optimized_seq_sort (block, last, zptr, quadrant, workDone_p, workLimit_p,firstAttempt_p, 0, last, 0, ftab);
+   
+   merge_sort_parallel (zptr, 0, last, block, last, quadrant, workLimit_p, firstAttempt_p, workDone_p, df_fullGtU, 0, ftab);
 
    free (ftab);
    free (quadrant);
@@ -3067,7 +3069,7 @@ IntNative main ( IntNative argc, Char *argv[] )
    bsStream                = NULL;
    numFileNames            = 0;
    numFilesProcessed       = 0;
-   workFactor              = 30;
+   workFactor              = 1000;
 
    strcpy ( inName,  "(none)" );
    strcpy ( outName, "(none)" );
