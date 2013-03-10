@@ -13,7 +13,7 @@
 #define UInt16  unsigned short
 #define Bool    char
 
-#define THRESH 1000
+#define THRESH 100
 
 typedef int cmp_func (UChar *tblock, Int32 tlast,
 		      UInt16 *tquadrant, Int32 *tworkDone,
@@ -62,9 +62,9 @@ void merge_sort_parallel_1 (Int32 *A, Int32 left, Int32 right, UChar *tblock, In
     {
       Bool flag;
       int wlim = 1000000000;
-      df_sortIt (tblock+left, right-left, A+left, tworkDone, &wlim, &flag);
+      //df_sortIt (tblock+left, right-left, A+left, tworkDone, &wlim, &flag);
       //df_qSort3 ( tblock, tlast, A, tquadrant, tworkDone, 1000000, 0, left, right, 0 );
-      //df_simpleSort ( tblock, tlast, A, tquadrant, tworkDone, 1000000, 0, left, right, 0 );
+      df_simpleSort ( tblock, tlast, A, tquadrant, tworkDone, 1000000, 0, left, right, 0 );
       //merge_sort_serial (A, left, right, tblock, tlast, tquadrant, tworkDone, cmp, d);
       return;
     }

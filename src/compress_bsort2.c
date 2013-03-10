@@ -1471,6 +1471,8 @@ INLINE Bool df_fullGtU ( UChar *block, Int32 last, UInt16* quadrant,
       assert (i1 != i2);
    #endif
 
+   assert (i1!=i2);
+
    c1 = block[i1];
    c2 = block[i2];
    if (c1 != c2) return (c1 > c2);
@@ -1727,6 +1729,26 @@ void df_qSort3 ( UChar *block, Int32 last, Int32 *zptr, UInt16* quadrant,
    }
 }
 
+#define MAX_T 100
+#define print_array_ab(array,a,b)  do{				  \
+    int i;							  \
+    fprintf (stderr,"%d (%d,%d)=======>\n", b-a+1, a,b);	  \
+    int upper=b;						  \
+    if (upper > a+MAX_T) upper=a+MAX_T;				  \
+    for (i=a;i<=upper;i++)					  \
+      fprintf(stderr,"%d,",array[i]);				  \
+    fprintf (stderr, "...\n");					  \
+  }while(0);
+
+#define print_array_d(block,array,a,b)  do{			  \
+    int i;							  \
+    fprintf (stderr,"%d (%d,%d)=======>\n", b-a+1, a,b);	  \
+    int upper=b;						  \
+    if (upper > a+MAX_T) upper=a+MAX_T;				  \
+    for (i=a;i<=upper;i++)					  \
+      fprintf(stderr,"(%d:%d,%d,%d),", array[i], block[array[i]], block[array[i]+1], block[array[i]+2]); \
+    fprintf (stderr, "...\n");					  \
+  }while(0);
 
 /*---------------------------------------------*/
 
@@ -1761,7 +1783,7 @@ void df_sortIt ( UChar *block, Int32 last, Int32 *zptr,
 
    block[-1] = block[last];
 
-   if (True) {
+   if (last < 4000) {
 
       /*--
          Use simpleSort(), since the full sorting mechanism
@@ -1777,10 +1799,10 @@ void df_sortIt ( UChar *block, Int32 last, Int32 *zptr,
       struct timeval *end2 = (struct timeval *) malloc (sizeof (struct timeval));
 
       //gettimeofday (start, NULL);
-      //merge_sort_parallel (zptr, 0, last, block, last, quadrant, workDone_p, df_fullGtU, 0);
+      merge_sort_parallel (zptr, 0, last, block, last, quadrant, workDone_p, df_fullGtU, 0);
       //gettimeofday (end, NULL);
       //fprintf (stderr, "*** [merge sort] takes %.5f secs\n", tdiff (end, start));
-      df_simpleSort ( block, last, zptr, quadrant, workDone_p, *workLimit_p, *firstAttempt_p, 0, last, 0 );
+      //df_simpleSort ( block, last, zptr, quadrant, workDone_p, *workLimit_p, *firstAttempt_p, 0, last, 0 );
       //gettimeofday (end2, NULL);
       //fprintf (stderr, "*** [merge sort] takes %.5f secs\n", tdiff (end2, end));
       //df_simpleSort ( block, last, zptr, quadrant, workDone_p, *workLimit_p, *firstAttempt_p, 0, last, 0 );
@@ -1867,11 +1889,21 @@ void df_sortIt ( UChar *block, Int32 last, Int32 *zptr,
                Int32 lo = ftab[sb]   & CLEARMASK;
                Int32 hi = (ftab[sb+1] & CLEARMASK) - 1;
                if (hi > lo) {
+		 fprintf (stderr, "%d,", hi-lo);
                   if (verbosity >= 4)
                      fprintf ( stderr,
                                "        qsort [0x%x, 0x%x]   done %d   this %d\n",
                                ss, j, numQSorted, hi - lo + 1 );
+
+		  Int32 workLimit = 100000;
+		  Int32 firstAttempt = 0;
+		  //df_simpleSort ( block, last, zptr, quadrant, workDone_p, workLimit, firstAttempt, lo, hi, 0 );
+
+		  //print_array_d (block, zptr, lo, hi);
                   df_qSort3 ( block, last, zptr, quadrant, workDone_p, *workLimit_p, *firstAttempt_p, lo, hi, 2 );
+		  //merge_sort_serial (zptr, lo, hi, block, last, quadrant, workDone_p, df_fullGtU, 0);
+		  //print_array_d (block, zptr, lo, hi);
+		  
                   numQSorted += ( hi - lo + 1 );
                   if (*workDone_p > *workLimit_p && *firstAttempt_p)
 		    {
@@ -2048,8 +2080,8 @@ Bool doReversibleTransformation ( UChar *block, Int32 last, Int32 *zptr, Int32 *
    Bool firstAttempt    = True;
    Bool blockRandomised = False;
 
-   merge_sort_parallel (zptr, 0, last, block, last, , &workDone);
-   //df_sortIt (block, last, zptr, &workDone, &workLimit, &firstAttempt);
+   //merge_sort_parallel (zptr, 0, last, block, last, , &workDone);
+   df_sortIt (block, last, zptr, &workDone, &workLimit, &firstAttempt);
 
    if (verbosity >= 3)
       fprintf ( stderr, "      %d work, %d block, ratio %5.2f\n",
