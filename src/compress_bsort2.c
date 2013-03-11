@@ -1823,7 +1823,9 @@ optimized_seq_sort ( UChar *block, Int32 last, Int32 *zptr, UInt16 *quadrant,
          The main sorting loop.
       --*/
 
+#pragma omp parallel for num_threads(8) shared (ftab, runningOrder, block, quadrant, bigDone, zptr, last) firstprivate (j,ss,sb)
       for (i = 0; i <= 255; i++) {
+	{
 
          /*--
             Process big buckets, starting with the least full.
@@ -1848,11 +1850,11 @@ optimized_seq_sort ( UChar *block, Int32 last, Int32 *zptr, UInt16 *quadrant,
                                "        qsort [0x%x, 0x%x]   done %d   this %d\n",
                                ss, j, numQSorted, hi - lo + 1 );
                   df_qSort3 ( block, last, zptr, quadrant, workDone_p, *workLimit_p, *firstAttempt_p, lo, hi, 2 );
-                  numQSorted += ( hi - lo + 1 );
-                  if (*workDone_p > *workLimit_p && *firstAttempt_p)
-		    {
-		      return;
-		    }
+                  /* numQSorted += ( hi - lo + 1 ); */
+                  /* if (*workDone_p > *workLimit_p && *firstAttempt_p) */
+		  /*   { */
+		  /*     return; */
+		  /*   } */
                }
                ftab[sb] |= SETMASK;
             }
@@ -1890,20 +1892,21 @@ optimized_seq_sort ( UChar *block, Int32 last, Int32 *zptr, UInt16 *quadrant,
             Now scan this big bucket so as to synthesise the
             sorted order for small buckets [t, ss] for all t != ss.
          --*/
-         for (j = 0; j <= 255; j++)
-            copy[j] = ftab[(j << 8) + ss] & CLEARMASK;
+         /* for (j = 0; j <= 255; j++) */
+         /*    copy[j] = ftab[(j << 8) + ss] & CLEARMASK; */
 
-         for (j = ftab[ss << 8] & CLEARMASK;
-              j < (ftab[(ss+1) << 8] & CLEARMASK);
-              j++) {
-            c1 = block[zptr[j]-1];
-            if ( ! bigDone[c1] ) {
-               zptr[copy[c1]] = zptr[j] == 0 ? last : zptr[j] - 1;
-               copy[c1] ++;
-            }
-         }
+         /* for (j = ftab[ss << 8] & CLEARMASK; */
+         /*      j < (ftab[(ss+1) << 8] & CLEARMASK); */
+         /*      j++) { */
+         /*    c1 = block[zptr[j]-1]; */
+         /*    if ( ! bigDone[c1] ) { */
+         /*       zptr[copy[c1]] = zptr[j] == 0 ? last : zptr[j] - 1; */
+         /*       copy[c1] ++; */
+         /*    } */
+         /* } */
 
-         for (j = 0; j <= 255; j++) ftab[(j << 8) + ss] |= SETMASK;
+         /* for (j = 0; j <= 255; j++) ftab[(j << 8) + ss] |= SETMASK; */
+      }
       }
 
       if (verbosity >= 4)
@@ -1939,9 +1942,9 @@ void df_sortIt ( UChar *block, Int32 last, Int32 *zptr,
 
    block[-1] = block[last];
 
-   //optimized_seq_sort (block, last, zptr, quadrant, workDone_p, workLimit_p,firstAttempt_p, 0, last, 0, ftab);
+   optimized_seq_sort (block, last, zptr, quadrant, workDone_p, workLimit_p,firstAttempt_p, 0, last, 0, ftab);
    
-   merge_sort_parallel (zptr, 0, last, block, last, quadrant, workLimit_p, firstAttempt_p, workDone_p, df_fullGtU, 0, ftab);
+   //merge_sort_parallel (zptr, 0, last, block, last, quadrant, workLimit_p, firstAttempt_p, workDone_p, df_fullGtU, 0, ftab);
 
    free (ftab);
    free (quadrant);
