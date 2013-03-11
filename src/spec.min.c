@@ -265,7 +265,7 @@ int spec_putc(unsigned char ch, int fd) {
     return ch;
 }
 
-#define MB (1<<11)
+#define MB (1<<14)
 
 #ifdef SPEC_CPU2000
 int main (int argc, char *argv[]) {
