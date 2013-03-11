@@ -1823,8 +1823,13 @@ optimized_seq_sort ( UChar *block, Int32 last, Int32 *zptr, UInt16 *quadrant,
          The main sorting loop.
       --*/
 
-#pragma omp parallel for num_threads(8) shared (ftab, runningOrder, block, quadrant, bigDone, zptr, last) firstprivate (j,ss,sb)
+#pragma omp parallel
+      {
+#pragma omp single
+      {      
       for (i = 0; i <= 255; i++) {
+#pragma omp task default(none) shared (numQSorted, stderr, verbosity, ftab, runningOrder, block, quadrant, bigDone, zptr, last, firstAttempt_p, workLimit_p, workDone_p) firstprivate (i) private(j, ss, sb)
+	
 	{
 
          /*--
@@ -1870,23 +1875,23 @@ optimized_seq_sort ( UChar *block, Int32 last, Int32 *zptr, UInt16 *quadrant,
          --*/
          bigDone[ss] = True;
 
-         if (i < 255) {
-            Int32 bbStart  = ftab[ss << 8] & CLEARMASK;
-            Int32 bbSize   = (ftab[(ss+1) << 8] & CLEARMASK) - bbStart;
-            Int32 shifts   = 0;
+         /* if (i < 255) { */
+         /*    Int32 bbStart  = ftab[ss << 8] & CLEARMASK; */
+         /*    Int32 bbSize   = (ftab[(ss+1) << 8] & CLEARMASK) - bbStart; */
+         /*    Int32 shifts   = 0; */
 
-            while ((bbSize >> shifts) > 65534) shifts++;
+         /*    while ((bbSize >> shifts) > 65534) shifts++; */
 
-            for (j = 0; j < bbSize; j++) {
-               Int32 a2update     = zptr[bbStart + j];
-               UInt16 qVal        = (UInt16)(j >> shifts);
-               quadrant[a2update] = qVal;
-               if (a2update < NUM_OVERSHOOT_BYTES)
-                  quadrant[a2update + last + 1] = qVal;
-            }
+         /*    for (j = 0; j < bbSize; j++) { */
+         /*       Int32 a2update     = zptr[bbStart + j]; */
+         /*       UInt16 qVal        = (UInt16)(j >> shifts); */
+         /*       quadrant[a2update] = qVal; */
+         /*       if (a2update < NUM_OVERSHOOT_BYTES) */
+         /*          quadrant[a2update + last + 1] = qVal; */
+         /*    } */
 
-            if (! ( ((bbSize-1) >> shifts) <= 65535 )) panic ( "sortIt" );
-         }
+         /*    if (! ( ((bbSize-1) >> shifts) <= 65535 )) panic ( "sortIt" ); */
+         /* } */
 
          /*--
             Now scan this big bucket so as to synthesise the
@@ -1906,6 +1911,9 @@ optimized_seq_sort ( UChar *block, Int32 last, Int32 *zptr, UInt16 *quadrant,
          /* } */
 
          /* for (j = 0; j <= 255; j++) ftab[(j << 8) + ss] |= SETMASK; */
+      }
+      }
+#pragma omp taskwait
       }
       }
 
