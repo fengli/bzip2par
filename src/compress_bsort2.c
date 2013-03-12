@@ -522,6 +522,8 @@ int  blockSize100k;
 
 #define SIZE100K 100000
 
+__thread UInt16 quadrant[(SIZE100K * 9)+NUM_OVERSHOOT_BYTES] = {0};
+
 /*--
   Used when sorting.  If too many long comparisons
   happen, we stop sorting, randomise the block 
@@ -1456,7 +1458,7 @@ void moveToFrontCodeAndSend ( UChar *block, Int32 last, UInt16* szptr,
   into the subscript range
   [last+1 .. last+NUM_OVERSHOOT_BYTES].
 --*/
-INLINE Bool df_fullGtU ( UChar *block, Int32 last, UInt16* quadrant,
+INLINE Bool df_fullGtU ( UChar *block, Int32 last, UInt16* _quadrant,
 			 Int32 *workDone_p, Int32 i1, Int32 i2 )
 {
    Int32 k;
@@ -1559,7 +1561,7 @@ Int32 incs[14] = { 1, 4, 13, 40, 121, 364, 1093, 3280,
                    9841, 29524, 88573, 265720,
                    797161, 2391484 };
 
-void df_simpleSort ( UChar *block, Int32 last, Int32 *zptr, UInt16 *quadrant,
+void df_simpleSort ( UChar *block, Int32 last, Int32 *zptr, UInt16 *_quadrant,
 		  Int32 *workDone_p, Int32 workLimit, Bool firstAttempt,
 		  Int32 lo, Int32 hi, Int32 d )
 {
@@ -1585,7 +1587,7 @@ void df_simpleSort ( UChar *block, Int32 last, Int32 *zptr, UInt16 *quadrant,
 
          v = zptr[i];
          j = i;
-         while ( df_fullGtU ( block, last, quadrant, workDone_p, zptr[j-h]+d, v+d ) ) {
+         while ( df_fullGtU ( block, last, _quadrant, workDone_p, zptr[j-h]+d, v+d ) ) {
             zptr[j] = zptr[j-h];
             j = j - h;
             if (j <= (lo + h - 1)) break;
@@ -1657,7 +1659,7 @@ typedef
 --*/
 #define QSORT_STACK_SIZE 1000
 
-void df_qSort3 ( UChar *block, Int32 last, Int32 *zptr, UInt16* quadrant,
+void df_qSort3 ( UChar *block, Int32 last, Int32 *zptr, UInt16* _quadrant,
 	      Int32 *workDone_p, Int32 workLimit, Bool firstAttempt,
 	      Int32 loSt, Int32 hiSt, Int32 dSt)
 {
@@ -1675,7 +1677,7 @@ void df_qSort3 ( UChar *block, Int32 last, Int32 *zptr, UInt16* quadrant,
       pop ( lo, hi, d );
 
       if (hi - lo < SMALL_THRESH || d > DEPTH_THRESH) {
-	df_simpleSort ( block, last, zptr, quadrant, workDone_p, workLimit, firstAttempt, lo, hi, d );
+	df_simpleSort ( block, last, zptr, _quadrant, workDone_p, workLimit, firstAttempt, lo, hi, d );
          if (*workDone_p > workLimit && firstAttempt)
 	   return;
          continue;
@@ -1737,7 +1739,7 @@ void df_qSort3 ( UChar *block, Int32 last, Int32 *zptr, UInt16* quadrant,
 
 
 void
-optimized_seq_sort ( UChar *block, Int32 last, Int32 *zptr, UInt16 *quadrant,
+optimized_seq_sort ( UChar *block, Int32 last, Int32 *zptr, UInt16 *_quadrant,
 		     Int32 *workDone_p, Int32 *workLimit_p, Bool *firstAttempt_p,
 		     Int32 lo, Int32 hi, Int32 d, Int32 *ftab)
 {
@@ -1759,7 +1761,7 @@ optimized_seq_sort ( UChar *block, Int32 last, Int32 *zptr, UInt16 *quadrant,
       *firstAttempt_p = False;
       *workDone_p = *workLimit_p = 0;
 
-      df_simpleSort ( block, last, zptr, quadrant, workDone_p, *workLimit_p, *firstAttempt_p, 0, last, 0 );
+      df_simpleSort ( block, last, zptr, _quadrant, workDone_p, *workLimit_p, *firstAttempt_p, 0, last, 0 );
       if (verbosity >= 4) fprintf ( stderr, "        simpleSort done.\n" );
 
    } else {
@@ -1823,7 +1825,7 @@ optimized_seq_sort ( UChar *block, Int32 last, Int32 *zptr, UInt16 *quadrant,
          The main sorting loop.
       --*/
 
-#pragma omp parallel for schedule (static) num_threads(24) default (none) shared (ftab, runningOrder, block, quadrant, bigDone, zptr, last, verbosity, stderr, numQSorted, firstAttempt_p, workLimit_p, workDone_p) private (j,ss,sb)
+#pragma omp parallel for schedule (static) num_threads(4) default (none) shared (ftab, _quadrant, runningOrder, block, bigDone, zptr, last, verbosity, stderr, numQSorted, firstAttempt_p, workLimit_p, workDone_p) private (j,ss,sb)
       for (i = 0; i <= 255; i++) {
 	{
 
@@ -1849,7 +1851,7 @@ optimized_seq_sort ( UChar *block, Int32 last, Int32 *zptr, UInt16 *quadrant,
                      fprintf ( stderr,
                                "        qsort [0x%x, 0x%x]   done %d   this %d\n",
                                ss, j, numQSorted, hi - lo + 1 );
-                  df_qSort3 ( block, last, zptr, quadrant, workDone_p, *workLimit_p, *firstAttempt_p, lo, hi, 2 );
+                  df_qSort3 ( block, last, zptr, _quadrant, workDone_p, *workLimit_p, *firstAttempt_p, lo, hi, 2 );
                   /* numQSorted += ( hi - lo + 1 ); */
                   /* if (*workDone_p > *workLimit_p && *firstAttempt_p) */
 		  /*   { */
@@ -1927,7 +1929,7 @@ void df_sortIt ( UChar *block, Int32 last, Int32 *zptr,
 
    /****: ftab could be local since it's just used in this function.  ****/
    Int32 *ftab = malloc ( 65537 * sizeof(Int32) );
-   UInt16 *quadrant = malloc (((SIZE100K * blockSize100k)+NUM_OVERSHOOT_BYTES)*sizeof (Int16));
+
    /*--
       In the various block-sized structures, live data runs
       from 0 to last+NUM_OVERSHOOT_BYTES inclusive.  First,
@@ -1937,17 +1939,15 @@ void df_sortIt ( UChar *block, Int32 last, Int32 *zptr,
    if (verbosity >= 4) fprintf ( stderr, "        sort initialise ...\n" );
    for (i = 0; i < NUM_OVERSHOOT_BYTES; i++)
        block[last+i+1] = block[i % (last+1)];
-   for (i = 0; i <= last+NUM_OVERSHOOT_BYTES; i++)
-       quadrant[i] = 0;
 
    block[-1] = block[last];
 
-   optimized_seq_sort (block, last, zptr, quadrant, workDone_p, workLimit_p,firstAttempt_p, 0, last, 0, ftab);
+   Int32 *_quadrant = NULL;
+   optimized_seq_sort (block, last, zptr, _quadrant, workDone_p, workLimit_p,firstAttempt_p, 0, last, 0, ftab);
    
-   //merge_sort_parallel (zptr, 0, last, block, last, quadrant, workLimit_p, firstAttempt_p, workDone_p, df_fullGtU, 0, ftab);
+   //merge_sort_parallel (zptr, 0, last, block, last, _quadrant, workLimit_p, firstAttempt_p, workDone_p, df_fullGtU, 0, ftab);
 
    free (ftab);
-   free (quadrant);
 }
 
 
