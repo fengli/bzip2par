@@ -1872,23 +1872,23 @@ optimized_seq_sort ( UChar *block, Int32 last, Int32 *zptr, UInt16 *_quadrant,
          --*/
          bigDone[ss] = True;
 
-         /* if (i < 255) { */
-         /*    Int32 bbStart  = ftab[ss << 8] & CLEARMASK; */
-         /*    Int32 bbSize   = (ftab[(ss+1) << 8] & CLEARMASK) - bbStart; */
-         /*    Int32 shifts   = 0; */
+         if (i < 255) {
+            Int32 bbStart  = ftab[ss << 8] & CLEARMASK;
+            Int32 bbSize   = (ftab[(ss+1) << 8] & CLEARMASK) - bbStart;
+            Int32 shifts   = 0;
 
-         /*    while ((bbSize >> shifts) > 65534) shifts++; */
+            while ((bbSize >> shifts) > 65534) shifts++;
 
-         /*    for (j = 0; j < bbSize; j++) { */
-         /*       Int32 a2update     = zptr[bbStart + j]; */
-         /*       UInt16 qVal        = (UInt16)(j >> shifts); */
-         /*       quadrant[a2update] = qVal; */
-         /*       if (a2update < NUM_OVERSHOOT_BYTES) */
-         /*          quadrant[a2update + last + 1] = qVal; */
-         /*    } */
+            for (j = 0; j < bbSize; j++) {
+               Int32 a2update     = zptr[bbStart + j];
+               UInt16 qVal        = (UInt16)(j >> shifts);
+               quadrant[a2update] = qVal;
+               if (a2update < NUM_OVERSHOOT_BYTES)
+                  quadrant[a2update + last + 1] = qVal;
+            }
 
-         /*    if (! ( ((bbSize-1) >> shifts) <= 65535 )) panic ( "sortIt" ); */
-         /* } */
+            if (! ( ((bbSize-1) >> shifts) <= 65535 )) panic ( "sortIt" );
+         }
 
          /*--
             Now scan this big bucket so as to synthesise the
