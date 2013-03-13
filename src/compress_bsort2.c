@@ -522,7 +522,8 @@ int  blockSize100k;
 
 #define SIZE100K 100000
 
-__thread UInt16 quadrant[(SIZE100K * 9)+NUM_OVERSHOOT_BYTES] = {0};
+						 //__thread UInt16 quadrant[(SIZE100K * 9)+NUM_OVERSHOOT_BYTES] = {0};
+__thread UInt16 *quadrant = NULL;
 
 /*--
   Used when sorting.  If too many long comparisons
@@ -1825,90 +1826,97 @@ optimized_seq_sort ( UChar *block, Int32 last, Int32 *zptr, UInt16 *_quadrant,
          The main sorting loop.
       --*/
 
-#pragma omp parallel for schedule (static) num_threads(4) default (none) shared (ftab, _quadrant, runningOrder, block, bigDone, zptr, last, verbosity, stderr, numQSorted, firstAttempt_p, workLimit_p, workDone_p) private (j,ss,sb)
-      for (i = 0; i <= 255; i++) {
-	{
+#pragma omp parallel default (none) shared (ftab, _quadrant, runningOrder, block, bigDone, zptr, last, verbosity, stderr, numQSorted, firstAttempt_p, workLimit_p, workDone_p) private (j,ss,sb)
+      {
+	if (!quadrant)
+	  quadrant = calloc (last+NUM_OVERSHOOT_BYTES, sizeof (UInt16));
 
-         /*--
-            Process big buckets, starting with the least full.
-         --*/
-         ss = runningOrder[i];
+#pragma omp for schedule (dynamic, 2) private (j,ss,sb)
+	for (i = 0; i <= 255; i++)
+	  {
+	    /*--
+	      Process big buckets, starting with the least full.
+	      --*/
+	    ss = runningOrder[i];
 
-         /*--
-            Complete the big bucket [ss] by quicksorting
-            any unsorted small buckets [ss, j].  Hopefully
-            previous pointer-scanning phases have already
-            completed many of the small buckets [ss, j], so
-            we don't have to sort them at all.
-         --*/
-         for (j = 0; j <= 255; j++) {
-            sb = (ss << 8) + j;
-            if ( ! (ftab[sb] & SETMASK) ) {
-               Int32 lo = ftab[sb]   & CLEARMASK;
-               Int32 hi = (ftab[sb+1] & CLEARMASK) - 1;
-               if (hi > lo) {
+	    /*--
+	      Complete the big bucket [ss] by quicksorting
+	      any unsorted small buckets [ss, j].  Hopefully
+	      previous pointer-scanning phases have already
+	      completed many of the small buckets [ss, j], so
+	      we don't have to sort them at all.
+	      --*/
+	    for (j = 0; j <= 255; j++) {
+	      sb = (ss << 8) + j;
+	      if ( ! (ftab[sb] & SETMASK) ) {
+		Int32 lo = ftab[sb]   & CLEARMASK;
+		Int32 hi = (ftab[sb+1] & CLEARMASK) - 1;
+		if (hi > lo) {
                   if (verbosity >= 4)
-                     fprintf ( stderr,
-                               "        qsort [0x%x, 0x%x]   done %d   this %d\n",
-                               ss, j, numQSorted, hi - lo + 1 );
+		    fprintf ( stderr,
+			      "        qsort [0x%x, 0x%x]   done %d   this %d\n",
+			      ss, j, numQSorted, hi - lo + 1 );
                   df_qSort3 ( block, last, zptr, _quadrant, workDone_p, *workLimit_p, *firstAttempt_p, lo, hi, 2 );
                   /* numQSorted += ( hi - lo + 1 ); */
                   /* if (*workDone_p > *workLimit_p && *firstAttempt_p) */
 		  /*   { */
 		  /*     return; */
 		  /*   } */
-               }
-               ftab[sb] |= SETMASK;
-            }
-         }
+		}
+		ftab[sb] |= SETMASK;
+	      }
+	    }
 
-         /*--
-            The ss big bucket is now done.  Record this fact,
-            and update the quadrant descriptors.  Remember to
-            update quadrants in the overshoot area too, if
-            necessary.  The "if (i < 255)" test merely skips
-            this updating for the last bucket processed, since
-            updating for the last bucket is pointless.
-         --*/
-         bigDone[ss] = True;
+	    /*--
+	      The ss big bucket is now done.  Record this fact,
+	      and update the quadrant descriptors.  Remember to
+	      update quadrants in the overshoot area too, if
+	      necessary.  The "if (i < 255)" test merely skips
+	      this updating for the last bucket processed, since
+	      updating for the last bucket is pointless.
+	      --*/
+	    bigDone[ss] = True;
 
-         if (i < 255) {
-            Int32 bbStart  = ftab[ss << 8] & CLEARMASK;
-            Int32 bbSize   = (ftab[(ss+1) << 8] & CLEARMASK) - bbStart;
-            Int32 shifts   = 0;
+	    if (i < 255) {
+	      Int32 bbStart  = ftab[ss << 8] & CLEARMASK;
+	      Int32 bbSize   = (ftab[(ss+1) << 8] & CLEARMASK) - bbStart;
+	      Int32 shifts   = 0;
 
-            while ((bbSize >> shifts) > 65534) shifts++;
+	      while ((bbSize >> shifts) > 65534) shifts++;
 
-            for (j = 0; j < bbSize; j++) {
-               Int32 a2update     = zptr[bbStart + j];
-               UInt16 qVal        = (UInt16)(j >> shifts);
-               quadrant[a2update] = qVal;
-               if (a2update < NUM_OVERSHOOT_BYTES)
+	      for (j = 0; j < bbSize; j++) {
+		Int32 a2update     = zptr[bbStart + j];
+		UInt16 qVal        = (UInt16)(j >> shifts);
+		quadrant[a2update] = qVal;
+		if (a2update < NUM_OVERSHOOT_BYTES)
                   quadrant[a2update + last + 1] = qVal;
-            }
+	      }
 
-            if (! ( ((bbSize-1) >> shifts) <= 65535 )) panic ( "sortIt" );
-         }
+	      if (! ( ((bbSize-1) >> shifts) <= 65535 )) panic ( "sortIt" );
+	    }
 
-         /*--
-            Now scan this big bucket so as to synthesise the
-            sorted order for small buckets [t, ss] for all t != ss.
-         --*/
-         /* for (j = 0; j <= 255; j++) */
-         /*    copy[j] = ftab[(j << 8) + ss] & CLEARMASK; */
+	    /*--
+	      Now scan this big bucket so as to synthesise the
+	      sorted order for small buckets [t, ss] for all t != ss.
+	      --*/
+	    /* for (j = 0; j <= 255; j++) */
+	    /*    copy[j] = ftab[(j << 8) + ss] & CLEARMASK; */
 
-         /* for (j = ftab[ss << 8] & CLEARMASK; */
-         /*      j < (ftab[(ss+1) << 8] & CLEARMASK); */
-         /*      j++) { */
-         /*    c1 = block[zptr[j]-1]; */
-         /*    if ( ! bigDone[c1] ) { */
-         /*       zptr[copy[c1]] = zptr[j] == 0 ? last : zptr[j] - 1; */
-         /*       copy[c1] ++; */
-         /*    } */
-         /* } */
+	    /* for (j = ftab[ss << 8] & CLEARMASK; */
+	    /*      j < (ftab[(ss+1) << 8] & CLEARMASK); */
+	    /*      j++) { */
+	    /*    c1 = block[zptr[j]-1]; */
+	    /*    if ( ! bigDone[c1] ) { */
+	    /*       zptr[copy[c1]] = zptr[j] == 0 ? last : zptr[j] - 1; */
+	    /*       copy[c1] ++; */
+	    /*    } */
+	    /* } */
 
-         /* for (j = 0; j <= 255; j++) ftab[(j << 8) + ss] |= SETMASK; */
-      }
+	    /* for (j = 0; j <= 255; j++) ftab[(j << 8) + ss] |= SETMASK; */
+	  }
+
+	if (quadrant)
+	  memset (quadrant, 0, (last + NUM_OVERSHOOT_BYTES) * sizeof (UInt16));
       }
 
       if (verbosity >= 4)
