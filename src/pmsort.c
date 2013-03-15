@@ -13,7 +13,7 @@
 #define UInt16  unsigned short
 #define Bool    char
 
-#define THRESH (1<<13)
+#define THRESH (1<<18)
 
 typedef int cmp_func (UChar *tblock, Int32 tlast,
 		      UInt16 *tquadrant, Int32 *tworkDone,
@@ -48,8 +48,9 @@ void merge_sort_parallel (Int32 *A, Int32 left, Int32 right, UChar *tblock, Int3
 			  UInt16 *tquadrant, Int32 *tworkLimit, Int32 *tfirstAttempt,
 			  Int32 *tworkDone, cmp_func cmp, Int32 d, Int32 *ftab)
 {
-#pragma omp parallel shared (A)
+#pragma omp parallel default (none) shared (A,tblock,tlast,tworkLimit, tfirstAttempt,tworkDone,cmp) firstprivate(left,right,d) private (tquadrant,ftab)
   {
+    
 #pragma omp single
     {
       merge_sort_parallel_1 (A, left, right, tblock, tlast, tquadrant, tworkLimit, tfirstAttempt,
@@ -62,6 +63,13 @@ void merge_sort_parallel_1 (Int32 *A, Int32 left, Int32 right, UChar *tblock, In
 			    UInt16 *tquadrant, Int32 *tworkLimit, Int32 *tfirstAttempt,
 			    Int32 *tworkDone, cmp_func cmp, Int32 d, Int32 *ftab)
 {
+  ftab = malloc (65536 * sizeof (Int32));
+  tquadrant = malloc ((tlast+20)*sizeof (Int16));
+
+  Int32 i;
+  for (i = 0; i <= tlast+20; i++)
+    tquadrant[i] = 0;
+
   if (right-left <= THRESH)
     {
       optimized_seq_sort ( tblock, tlast, A, tquadrant, tworkDone, tworkLimit, tfirstAttempt, left, right, 0, ftab);
@@ -72,10 +80,10 @@ void merge_sort_parallel_1 (Int32 *A, Int32 left, Int32 right, UChar *tblock, In
 
   Int32 mid = (left+right)/2;
 
-#pragma omp task shared (A)
+#pragma omp task default (none) shared (A,tblock,tlast,tworkLimit, tfirstAttempt,tworkDone,cmp) firstprivate(left,mid,d) private (tquadrant,ftab)
   merge_sort_parallel_1 (A, left, mid, tblock, tlast, tquadrant, tworkLimit, tfirstAttempt, tworkDone, cmp, d, ftab);
 
-#pragma omp task shared (A)
+#pragma omp task default (none) shared (A,tblock,tlast,tworkLimit, tfirstAttempt,tworkDone,cmp) firstprivate(mid,right,d) private (tquadrant,ftab)
   merge_sort_parallel_1 (A, mid+1, right, tblock, tlast, tquadrant, tworkLimit, tfirstAttempt, tworkDone, cmp, d, ftab);
 
 #pragma omp taskwait
