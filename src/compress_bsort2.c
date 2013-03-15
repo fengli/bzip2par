@@ -1748,7 +1748,7 @@ optimized_seq_sort ( UChar *block, Int32 last, Int32 *zptr, UInt16 *quadrant,
    UChar c1, c2;
    Int32 numQSorted;
 
-   if (last < 4000) {
+   if (False) {
 
       /*--
          Use simpleSort(), since the full sorting mechanism
@@ -1771,26 +1771,34 @@ optimized_seq_sort ( UChar *block, Int32 last, Int32 *zptr, UInt16 *quadrant,
 
       for (i = 0; i <= 65536; i++) ftab[i] = 0;
 
-      c1 = block[-1];
-      for (i = 0; i <= last; i++) {
-         c2 = block[i];
+      c1 = block[lo];
+      for (i = lo; i <= hi; i++) {
+         c2 = block[i+1];
          ftab[(c1 << 8) + c2]++;
          c1 = c2;
       }
 
+      /* debugging.... */
+      /* for (i = 0; i <= 65536; i++) */
+      /* 	if (ftab[i] != 0) */
+      /* 	  fprintf (stderr, "ftab[%d]=%d\t", i, ftab[i]); */
+      /* fprintf (stderr, "\n"); */
+
       for (i = 1; i <= 65536; i++) ftab[i] += ftab[i-1];
 
-      c1 = block[0];
-      for (i = 0; i < last; i++) {
+      c1 = block[lo];
+      for (i = lo; i <= hi; i++) {
          c2 = block[i+1];
          j = (c1 << 8) + c2;
          c1 = c2;
          ftab[j]--;
-         zptr[ftab[j]] = i;
+         zptr[lo+ftab[j]] = i;
       }
-      j = (block[last] << 8) + block[0];
-      ftab[j]--;
-      zptr[ftab[j]] = last;
+
+      /* debugging.... */
+      /* for (i=0; i<=last; i++) */
+      /* 	fprintf (stderr, "zptr[%d]=%d,", i, zptr[i]); */
+      /* fprintf (stderr,"\n"); */
 
       /*--
          Now ftab contains the first loc of every small bucket.
@@ -1840,15 +1848,17 @@ optimized_seq_sort ( UChar *block, Int32 last, Int32 *zptr, UInt16 *quadrant,
          for (j = 0; j <= 255; j++) {
             sb = (ss << 8) + j;
             if ( ! (ftab[sb] & SETMASK) ) {
-               Int32 lo = ftab[sb]   & CLEARMASK;
-               Int32 hi = (ftab[sb+1] & CLEARMASK) - 1;
-               if (hi > lo) {
+               Int32 slo = ftab[sb]   & CLEARMASK;
+               Int32 shi = (ftab[sb+1] & CLEARMASK) - 1;
+	       
+               if (shi > slo) {
+		 /* fprintf (stderr, ".... lo=%d,hi=%d\n", lo, hi); */
                   if (verbosity >= 4)
                      fprintf ( stderr,
                                "        qsort [0x%x, 0x%x]   done %d   this %d\n",
-                               ss, j, numQSorted, hi - lo + 1 );
-                  df_qSort3 ( block, last, zptr, quadrant, workDone_p, *workLimit_p, *firstAttempt_p, lo, hi, 2 );
-                  numQSorted += ( hi - lo + 1 );
+                               ss, j, numQSorted, shi - slo + 1 );
+                  df_qSort3 ( block, last, zptr, quadrant, workDone_p, *workLimit_p, *firstAttempt_p, lo+slo, lo+shi, 2 );
+                  numQSorted += ( shi - slo + 1 );
                   if (*workDone_p > *workLimit_p && *firstAttempt_p)
 		    {
 		      return;
@@ -1868,42 +1878,42 @@ optimized_seq_sort ( UChar *block, Int32 last, Int32 *zptr, UInt16 *quadrant,
          --*/
          bigDone[ss] = True;
 
-         if (i < 255) {
-            Int32 bbStart  = ftab[ss << 8] & CLEARMASK;
-            Int32 bbSize   = (ftab[(ss+1) << 8] & CLEARMASK) - bbStart;
-            Int32 shifts   = 0;
+         /* if (i < 255) { */
+         /*    Int32 bbStart  = ftab[ss << 8] & CLEARMASK; */
+         /*    Int32 bbSize   = (ftab[(ss+1) << 8] & CLEARMASK) - bbStart; */
+         /*    Int32 shifts   = 0; */
 
-            while ((bbSize >> shifts) > 65534) shifts++;
+         /*    while ((bbSize >> shifts) > 65534) shifts++; */
 
-            for (j = 0; j < bbSize; j++) {
-               Int32 a2update     = zptr[bbStart + j];
-               UInt16 qVal        = (UInt16)(j >> shifts);
-               quadrant[a2update] = qVal;
-               if (a2update < NUM_OVERSHOOT_BYTES)
-                  quadrant[a2update + last + 1] = qVal;
-            }
+         /*    for (j = 0; j < bbSize; j++) { */
+         /*       Int32 a2update     = zptr[bbStart + j]; */
+         /*       UInt16 qVal        = (UInt16)(j >> shifts); */
+         /*       quadrant[a2update] = qVal; */
+         /*       if (a2update < NUM_OVERSHOOT_BYTES) */
+         /*          quadrant[a2update + last + 1] = qVal; */
+         /*    } */
 
-            if (! ( ((bbSize-1) >> shifts) <= 65535 )) panic ( "sortIt" );
-         }
+         /*    if (! ( ((bbSize-1) >> shifts) <= 65535 )) panic ( "sortIt" ); */
+         /* } */
 
-         /*--
-            Now scan this big bucket so as to synthesise the
-            sorted order for small buckets [t, ss] for all t != ss.
-         --*/
-         for (j = 0; j <= 255; j++)
-            copy[j] = ftab[(j << 8) + ss] & CLEARMASK;
+         /* /\*-- */
+         /*    Now scan this big bucket so as to synthesise the */
+         /*    sorted order for small buckets [t, ss] for all t != ss. */
+         /* --*\/ */
+         /* for (j = 0; j <= 255; j++) */
+         /*    copy[j] = ftab[(j << 8) + ss] & CLEARMASK; */
 
-         for (j = ftab[ss << 8] & CLEARMASK;
-              j < (ftab[(ss+1) << 8] & CLEARMASK);
-              j++) {
-            c1 = block[zptr[j]-1];
-            if ( ! bigDone[c1] ) {
-               zptr[copy[c1]] = zptr[j] == 0 ? last : zptr[j] - 1;
-               copy[c1] ++;
-            }
-         }
+         /* for (j = ftab[ss << 8] & CLEARMASK; */
+         /*      j < (ftab[(ss+1) << 8] & CLEARMASK); */
+         /*      j++) { */
+         /*    c1 = block[zptr[j]-1]; */
+         /*    if ( ! bigDone[c1] ) { */
+         /*       zptr[copy[c1]] = zptr[j] == 0 ? last : zptr[j] - 1; */
+         /*       copy[c1] ++; */
+         /*    } */
+         /* } */
 
-         for (j = 0; j <= 255; j++) ftab[(j << 8) + ss] |= SETMASK;
+         /* for (j = 0; j <= 255; j++) ftab[(j << 8) + ss] |= SETMASK; */
       }
 
       if (verbosity >= 4)
@@ -1939,8 +1949,9 @@ void df_sortIt ( UChar *block, Int32 last, Int32 *zptr,
 
    block[-1] = block[last];
 
+   for (i = 0; i <= last; i++) zptr[i] = i;
    //optimized_seq_sort (block, last, zptr, quadrant, workDone_p, workLimit_p,firstAttempt_p, 0, last, 0, ftab);
-   
+
    merge_sort_parallel (zptr, 0, last, block, last, quadrant, workLimit_p, firstAttempt_p, workDone_p, df_fullGtU, 0, ftab);
 
    free (ftab);

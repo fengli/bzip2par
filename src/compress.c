@@ -1761,7 +1761,7 @@ void df_sortIt ( UChar *block, Int32 last, Int32 *zptr,
 
    block[-1] = block[last];
 
-   if (last < 4000) {
+   if (0) {
 
       /*--
          Use simpleSort(), since the full sorting mechanism
@@ -1790,6 +1790,13 @@ void df_sortIt ( UChar *block, Int32 last, Int32 *zptr,
          c1 = c2;
       }
 
+      /* debugging.... */
+      /* for (i = 0; i <= 65536; i++) */
+      /* 	if (ftab[i] != 0) */
+      /* 	  fprintf (stderr, "ftab[%d]=%d\t", i, ftab[i]); */
+      /* fprintf (stderr, "\n"); */
+      /* end debugging.... */
+
       for (i = 1; i <= 65536; i++) ftab[i] += ftab[i-1];
 
       c1 = block[0];
@@ -1804,6 +1811,12 @@ void df_sortIt ( UChar *block, Int32 last, Int32 *zptr,
       ftab[j]--;
       zptr[ftab[j]] = last;
 
+      /* debugging.... */
+      /* for (i=0; i<=last; i++) */
+      /* 	fprintf (stderr, "zptr[%d]=%d,", i, zptr[i]); */
+      /* fprintf (stderr,"\n"); */
+      /* end debugging .... */
+      
       /*--
          Now ftab contains the first loc of every small bucket.
          Calculate the running order, from smallest to largest

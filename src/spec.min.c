@@ -159,7 +159,7 @@ int spec_load (int num, char *filename, int size) {
     }
     spec_fd[num].pos = spec_fd[num].len = 0;
     for (i = 0 ; i < size; i+= rc) {
-	rc = read(fd, spec_fd[num].buf+i, FILE_CHUNK);
+      rc = read(fd, spec_fd[num].buf+i, size>FILE_CHUNK?FILE_CHUNK:size);
 	if (rc == 0) break;
 	if (rc < 0) {
 	    fprintf(stderr, "Error reading from %s: %s\n", filename, strerror(errno));
@@ -265,7 +265,7 @@ int spec_putc(unsigned char ch, int fd) {
     return ch;
 }
 
-#define MB (1<<14)
+#define MB (1<<20)
 
 #ifdef SPEC_CPU2000
 int main (int argc, char *argv[]) {

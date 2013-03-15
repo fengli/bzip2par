@@ -13,7 +13,7 @@
 #define UInt16  unsigned short
 #define Bool    char
 
-#define THRESH (1<<8)
+#define THRESH (1<<13)
 
 typedef int cmp_func (UChar *tblock, Int32 tlast,
 		      UInt16 *tquadrant, Int32 *tworkDone,
@@ -31,14 +31,15 @@ int cmp (UChar *tblock, Int32 tlast,
 }
 
 void merge_sort_serial (Int32 *A, Int32 left, Int32 right, UChar *tblock, Int32 tlast,
-			UInt16 *tquadrant, Int32 *tworkDone, cmp_func cmp, Int32 d)
+			UInt16 *tquadrant, Int32 *tworkLimit, Int32 *tfirstAttempt,
+			Int32 *tworkDone, cmp_func cmp, Int32 d, Int32 *ftab)
 {
   if (right <= left) return;
 
   Int32 mid = (left+right)/2;
 
-  merge_sort_serial (A, left, mid, tblock, tlast, tquadrant, tworkDone, cmp, d);
-  merge_sort_serial (A, mid+1, right, tblock, tlast, tquadrant, tworkDone, cmp, d);
+  merge_sort_serial (A, left, mid, tblock, tlast, tquadrant, tworkLimit, tfirstAttempt, tworkDone, cmp, d, ftab);
+  merge_sort_serial (A, mid+1, right, tblock, tlast, tquadrant, tworkLimit, tfirstAttempt, tworkDone, cmp, d, ftab);
 
   merge (A, left, mid+1, right, tblock, tlast, tquadrant, tworkDone, cmp, d);
 }
@@ -63,13 +64,8 @@ void merge_sort_parallel_1 (Int32 *A, Int32 left, Int32 right, UChar *tblock, In
 {
   if (right-left <= THRESH)
     {
-      Bool flag;
-      int wlim = 1000000000;
-      //df_sortIt (tblock+left, right-left, A+left, tworkDone, &wlim, &flag);
-      //df_qSort3 ( tblock, tlast, A, tquadrant, tworkDone, 1000000, 0, left, right, 0 );
       optimized_seq_sort ( tblock, tlast, A, tquadrant, tworkDone, tworkLimit, tfirstAttempt, left, right, 0, ftab);
       //df_simpleSort ( tblock, tlast, A, tquadrant, tworkDone, 1000000, 0, left, right, 0 );
-      //merge_sort_serial (A, left, right, tblock, tlast, tquadrant, tworkDone, cmp, d);
       return;
     }
   //if (right <= left) return;
