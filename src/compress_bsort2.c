@@ -105,7 +105,6 @@
 #define BZ_LCCWIN32  0
 
 
-
 /*---------------------------------------------*/
 /*--
   Some stuff for all platforms.
@@ -1934,7 +1933,6 @@ void df_sortIt ( UChar *block, Int32 last, Int32 *zptr,
 
    /****: ftab could be local since it's just used in this function.  ****/
    Int32 *ftab = malloc ( 65537 * sizeof(Int32) );
-   UInt16 *quadrant = malloc (((SIZE100K * blockSize100k)+NUM_OVERSHOOT_BYTES)*sizeof (Int16));
    /*--
       In the various block-sized structures, live data runs
       from 0 to last+NUM_OVERSHOOT_BYTES inclusive.  First,
@@ -1944,18 +1942,15 @@ void df_sortIt ( UChar *block, Int32 last, Int32 *zptr,
    if (verbosity >= 4) fprintf ( stderr, "        sort initialise ...\n" );
    for (i = 0; i < NUM_OVERSHOOT_BYTES; i++)
        block[last+i+1] = block[i % (last+1)];
-   for (i = 0; i <= last+NUM_OVERSHOOT_BYTES; i++)
-       quadrant[i] = 0;
 
    block[-1] = block[last];
 
    for (i = 0; i <= last; i++) zptr[i] = i;
-   //optimized_seq_sort (block, last, zptr, quadrant, workDone_p, workLimit_p,firstAttempt_p, 0, last, 0, ftab);
+   //optimized_seq_sort (block, last, zptr, NULL, workDone_p, workLimit_p,firstAttempt_p, 0, last, 0, ftab);
 
-   merge_sort_parallel (zptr, 0, last, block, last, quadrant, workLimit_p, firstAttempt_p, workDone_p, df_fullGtU, 0, ftab);
+   merge_sort_parallel (zptr, 0, last, block, last, NULL, workLimit_p, firstAttempt_p, workDone_p, df_fullGtU, 0, ftab);
 
    free (ftab);
-   free (quadrant);
 }
 
 
