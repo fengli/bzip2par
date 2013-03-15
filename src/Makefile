@@ -15,7 +15,7 @@ WSTREAM_LIB=/home/li/tstar/open-stream/libworkstream_df/
 CFLAGS_WSTREAM = -Wall -g -std=c99 -O0 -ffast-math #-D_DEBUG
 LDFLAGS_WSTREAM = -L$(WSTREAM_LIB) -lm -lc -rdynamic -Wl,-rpath,$(WSTREAM_LIB) -lwstream_df
 
-CFLAGS_DEBUG = -Wall -g
+CFLAGS_DEBUG = -Wall -g -O3
 
 all: $(TEST)
 

@@ -13,7 +13,7 @@
 #define UInt16  unsigned short
 #define Bool    char
 
-#define THRESH (1<<18)
+#define THRESH (1<<15)
 
 typedef int cmp_func (UChar *tblock, Int32 tlast,
 		      UInt16 *tquadrant, Int32 *tworkDone,
@@ -87,7 +87,14 @@ void merge_sort_parallel_1 (Int32 *A, Int32 left, Int32 right, UChar *tblock, In
   merge_sort_parallel_1 (A, mid+1, right, tblock, tlast, tquadrant, tworkLimit, tfirstAttempt, tworkDone, cmp, d, ftab);
 
 #pragma omp taskwait
+  struct timeval *start = (struct timeval *) malloc (sizeof (struct timeval));
+  struct timeval *end = (struct timeval *) malloc (sizeof (struct timeval));
+  gettimeofday (start, NULL);
+  memset (tquadrant, 0, (tlast+20)*sizeof (UInt16));
   merge (A, left, mid+1, right, tblock, tlast, tquadrant, tworkDone, cmp, d);
+  gettimeofday (end, NULL);
+  fprintf (stderr, "** [merge timing]: %.5f seconds, [%d]\n", tdiff (end,start), right-left+1);
+  
 }
 
 void merge (Int32 *A, Int32 left, Int32 mid, Int32 right, UChar *tblock, Int32 tlast,

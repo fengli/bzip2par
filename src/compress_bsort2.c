@@ -1886,7 +1886,7 @@ optimized_seq_sort ( UChar *block, Int32 last, Int32 *zptr, UInt16 *quadrant,
          /*    while ((bbSize >> shifts) > 65534) shifts++; */
 
          /*    for (j = 0; j < bbSize; j++) { */
-         /*       Int32 a2update     = zptr[bbStart + j]; */
+         /*       Int32 a2update     = zptr[lo + bbStart + j]; */
          /*       UInt16 qVal        = (UInt16)(j >> shifts); */
          /*       quadrant[a2update] = qVal; */
          /*       if (a2update < NUM_OVERSHOOT_BYTES) */
