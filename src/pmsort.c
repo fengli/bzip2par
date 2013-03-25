@@ -13,7 +13,7 @@
 #define UInt16  unsigned short
 #define Bool    char
 
-#define THRESH (1<<8)
+#define THRESH (1<<12)
 
 typedef int cmp_func (UChar *tblock, Int32 tlast,
 		      UInt16 *tquadrant, Int32 *tworkDone,

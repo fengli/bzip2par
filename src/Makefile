@@ -5,9 +5,10 @@ LIB_DIR = ${INSTALL_DIR}/lib64
 BIN_DIR = ${INSTALL_DIR}/bin
 GCC = ${BIN_DIR}/gcc
 LIBWSTREAM_DF_DIR = $(LIB_DIR)
+ICC=/opt/intel/bin/icc
 
 ###########################################################################
-TEST= obzip2 bbzip2
+TEST= icc_obzip2 icc_bbzip2 obzip2 bbzip2
 CFLAGS =  -Wall -std=c99  -ffast-math -Wl,-rpath,$(INST_DIR)/lib64 -g  -DTIMING_OUTPUT#-fdump-tree-all #-Werror
 LDFLAGS = -L${LIB_DIR} -lm -lc -rdynamic -Wl,-rpath,$(LIB_DIR)
 
@@ -15,8 +16,8 @@ WSTREAM_LIB=/home/li/tstar/open-stream/libworkstream_df/
 CFLAGS_WSTREAM = -Wall -g -std=c99 -O0 -ffast-math #-D_DEBUG
 LDFLAGS_WSTREAM = -L$(WSTREAM_LIB) -lm -lc -rdynamic -Wl,-rpath,$(WSTREAM_LIB) -lwstream_df
 
-CFLAGS_DEBUG = -Wall -g
-
+CFLAGS_DEBUG = -Wall -g -O3
+ICC_FLAGS = -O3 
 all: $(TEST)
 
 bzip2:bzip2.c spec.c common.h
@@ -31,14 +32,21 @@ stream_bzip2: stream_spec.c stream_bzip2.c common.h
 obzip2: compress.c spec.min.c common.h
 	gcc $(CFLAGS_DEBUG) -o $@ $^
 
+icc_obzip2: compress.c spec.min.c common.h
+	$(ICC) $(ICC_CFLAGS) -o $@ $^
+
 bbzip2: compress_bsort2.c pmsort.c spec.min.c common.h
 	gcc $(CFLAGS_DEBUG) -fopenmp -o $@ $^
+
+icc_bbzip2: compress_bsort2.c pmsort.c spec.min.c common.h
+	$(ICC) $(ICC_CFLAGS) -openmp -o $@ $^
 
 df_bzip2: df_compress.c spec.min.c common.h tsu.h
 	gcc $(CFLAGS_WSTREAM) $(LDFLAGS_WSTREAM) $^ -o $@
 
-run: obzip2 bbzip2
+run: icc_obzip2 icc_bbzip2 obzip2 bbzip2
 	./run.sh
+
 clean:
 	rm -f out.*
 	rm -f $(TEST)

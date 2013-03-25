@@ -524,7 +524,10 @@ int  blockSize100k;
 
 						 //__thread UInt16 quadrant[(SIZE100K * 9)+NUM_OVERSHOOT_BYTES] = {0};
 __thread UInt16 *quadrant = NULL;
-
+#pragma omp threadprivate (quadrant)
+						 
+/* UInt16 *quadrant = NULL; */
+						 
 /*--
   Used when sorting.  If too many long comparisons
   happen, we stop sorting, randomise the block 
@@ -1826,12 +1829,12 @@ optimized_seq_sort ( UChar *block, Int32 last, Int32 *zptr, UInt16 *_quadrant,
          The main sorting loop.
       --*/
 
-#pragma omp parallel default (none) shared (ftab, _quadrant, runningOrder, block, bigDone, zptr, last, verbosity, stderr, numQSorted, firstAttempt_p, workLimit_p, workDone_p) private (j,ss,sb)
+#pragma omp parallel default (none) shared (ftab, _quadrant, runningOrder, block, bigDone, zptr, last, verbosity, stderr, numQSorted, firstAttempt_p, workLimit_p, workDone_p) private (j,ss,sb) 
       {
 	if (!quadrant)
 	  quadrant = calloc (last+NUM_OVERSHOOT_BYTES, sizeof (UInt16));
 
-#pragma omp for schedule (dynamic, 2) private (j,ss,sb)
+#pragma omp for schedule (dynamic) private (j,ss,sb)
 	for (i = 0; i <= 255; i++)
 	  {
 	    /*--
