@@ -14,7 +14,7 @@ LDFLAGS = -L${LIB_DIR} -lm -lc -rdynamic -Wl,-rpath,$(LIB_DIR)
 
 WSTREAM_LIB=/home/li/tstar/open-stream/libworkstream_df/
 CFLAGS_WSTREAM = -Wall -g -std=c99 -O0 -ffast-math #-D_DEBUG
-LDFLAGS_WSTREAM = -L$(WSTREAM_LIB) -lm -lc -rdynamic -Wl,-rpath,$(WSTREAM_LIB) -lwstream_df
+LDFLAGS_WSTREAM = -L$(LIB_DIR) -lm -lc -rdynamic -Wl, -rpath, $(LIB_DIR) -Wl,-rpath,$(LIBWSTREAM_DF_DIR) -L$(LIBWSTREAM_DF_DIR) -lwstream_df
 
 CFLAGS_DEBUG = -Wall -g
 
@@ -27,7 +27,7 @@ bzip2o:bzip2.o.c spec.c common.h
 	gcc $(CFLAGS_DEBUG) -o $@ $^
 
 stream_bzip2: stream_spec.c stream_bzip2.c common.h
-	$(GCC) $(CFLAGS) $(LDFLAGS) $^ -o $@ -fopenmp -Wl,-rpath,$(LIBWSTREAM_DF_DIR) -L${LIBWSTREAM_DF_DIR} -lwstream_df
+	$(GCC) $(CFLAGS) $(LDFLAGS_WSTREAM) $^ -o $@ -fopenmp -Wl,-rpath,$(LIBWSTREAM_DF_DIR) -L${LIBWSTREAM_DF_DIR} -lwstream_df
 
 obzip2: compress.c spec.min.c common.h
 	gcc $(CFLAGS_DEBUG) -o $@ $^
@@ -35,13 +35,13 @@ obzip2: compress.c spec.min.c common.h
 bbzip2: compress_bsort2.c pmsort.c spec.min.c common.h
 	gcc $(CFLAGS_DEBUG) -fopenmp -o $@ $^
 
-openbzip2: compress_bsort2.c pmsort.c spec.min.c common.h
+openbzip2: compress_bsort2.c spec.min.c common.h
 	$(OPENSTREAM_GCC) $(CFLAGS_DEBUG) $(LDFLAGS) -fopenmp -o $@ $^  -Wl,-rpath,$(LIBWSTREAM_DF_DIR) -L${LIBWSTREAM_DF_DIR} -lwstream_df
 
 df_bzip2: df_compress.c spec.min.c common.h tsu.h
 	gcc $(CFLAGS_WSTREAM) $(LDFLAGS_WSTREAM) $^ -o $@
 
-run: obzip2 bbzip2
+run: 
 	./run.sh
 clean:
 	rm -f out.*
