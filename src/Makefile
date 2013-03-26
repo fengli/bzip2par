@@ -1,4 +1,4 @@
-INST_DIR = ../../open-stream/gcc/install_omp
+INST_DIR = ../../open-stream/install
 
 INSTALL_DIR = ${INST_DIR}
 LIB_DIR = ${INSTALL_DIR}/lib64
@@ -6,8 +6,9 @@ BIN_DIR = ${INSTALL_DIR}/bin
 GCC = ${BIN_DIR}/gcc
 LIBWSTREAM_DF_DIR = $(LIB_DIR)
 
+OPENSTREAM_GCC = /home/li/tstar/open-stream/install/bin/gcc
 ###########################################################################
-TEST= obzip2 bbzip2
+TEST= obzip2 openbzip2
 CFLAGS =  -Wall -std=c99  -ffast-math -Wl,-rpath,$(INST_DIR)/lib64 -g  -DTIMING_OUTPUT#-fdump-tree-all #-Werror
 LDFLAGS = -L${LIB_DIR} -lm -lc -rdynamic -Wl,-rpath,$(LIB_DIR)
 
@@ -33,6 +34,9 @@ obzip2: compress.c spec.min.c common.h
 
 bbzip2: compress_bsort2.c pmsort.c spec.min.c common.h
 	gcc $(CFLAGS_DEBUG) -fopenmp -o $@ $^
+
+openbzip2: compress_bsort2.c pmsort.c spec.min.c common.h
+	$(OPENSTREAM_GCC) $(CFLAGS_DEBUG) $(LDFLAGS) -fopenmp -o $@ $^  -Wl,-rpath,$(LIBWSTREAM_DF_DIR) -L${LIBWSTREAM_DF_DIR} -lwstream_df
 
 df_bzip2: df_compress.c spec.min.c common.h tsu.h
 	gcc $(CFLAGS_WSTREAM) $(LDFLAGS_WSTREAM) $^ -o $@
