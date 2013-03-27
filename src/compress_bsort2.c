@@ -1511,32 +1511,32 @@ INLINE Bool df_fullGtU ( UChar *block, Int32 last, UInt16* _quadrant,
     c1 = block[i1];
     c2 = block[i2];
     if (c1 != c2) return (c1 > c2);
-    s1 = quadrant[i1];
-    s2 = quadrant[i2];
+    s1 = _quadrant[i1];
+    s2 = _quadrant[i2];
     if (s1 != s2) return (s1 > s2);
     i1++; i2++;
 
     c1 = block[i1];
     c2 = block[i2];
     if (c1 != c2) return (c1 > c2);
-    s1 = quadrant[i1];
-    s2 = quadrant[i2];
+    s1 = _quadrant[i1];
+    s2 = _quadrant[i2];
     if (s1 != s2) return (s1 > s2);
     i1++; i2++;
 
     c1 = block[i1];
     c2 = block[i2];
     if (c1 != c2) return (c1 > c2);
-    s1 = quadrant[i1];
-    s2 = quadrant[i2];
+    s1 = _quadrant[i1];
+    s2 = _quadrant[i2];
     if (s1 != s2) return (s1 > s2);
     i1++; i2++;
 
     c1 = block[i1];
     c2 = block[i2];
     if (c1 != c2) return (c1 > c2);
-    s1 = quadrant[i1];
-    s2 = quadrant[i2];
+    s1 = _quadrant[i1];
+    s2 = _quadrant[i2];
     if (s1 != s2) return (s1 > s2);
     i1++; i2++;
 
@@ -1752,7 +1752,7 @@ optimized_seq_sort ( UChar *block, Int32 last, Int32 *zptr, UInt16 *_quadrant,
   Int32 numQSorted;
 
   Int32 *_runningOrder = runningOrder;
-  Int32 *_copy = copy;
+  /* Int32 *_copy = copy; */
   Bool *_bigDone = bigDone;
 
   static gsum = 0;
@@ -1839,8 +1839,9 @@ optimized_seq_sort ( UChar *block, Int32 last, Int32 *zptr, UInt16 *_quadrant,
 
       for (i = 0; i < 256; i++)
 	{
-#pragma omp task default (none) firstprivate (i, ftab, _quadrant, _runningOrder, block, _bigDone, zptr, last, verbosity, stderr, numQSorted, firstAttempt_p, workLimit_p, workDone_p, j, ss, sb) output (barrier_output)
+#pragma omp task firstprivate (i, ftab, _quadrant, _runningOrder, block, _bigDone, zptr, last,  numQSorted, firstAttempt_p, workLimit_p, workDone_p, j, ss, sb) output (barrier_output)
 	  {
+	    Int32 *_ftab = ftab;
 	    /*--
 	      Process big buckets, starting with the least full.
 	      --*/
@@ -1855,7 +1856,7 @@ optimized_seq_sort ( UChar *block, Int32 last, Int32 *zptr, UInt16 *_quadrant,
 	      --*/
 	    for (j = 0; j <= 255; j++) {
 	      sb = (ss << 8) + j;
-	      if ( ! (ftab[sb] & SETMASK) ) {
+	      if ( ! (_ftab[sb] & SETMASK) ) {
 		Int32 lo = ftab[sb]   & CLEARMASK;
 		Int32 hi = (ftab[sb+1] & CLEARMASK) - 1;
 		if (hi > lo) {
@@ -1935,6 +1936,7 @@ optimized_seq_sort ( UChar *block, Int32 last, Int32 *zptr, UInt16 *_quadrant,
 	      gsum++;
 	  }
       }
+#pragma omp taskwait  
     }
 
     if (verbosity >= 4)
@@ -1974,7 +1976,7 @@ void df_sortIt ( UChar *block, Int32 last, Int32 *zptr,
    
   //merge_sort_parallel (zptr, 0, last, block, last, _quadrant, workLimit_p, firstAttempt_p, workDone_p, df_fullGtU, 0, ftab);
 
-  free (ftab);
+  //free (ftab);
 }
 
 
