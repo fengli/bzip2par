@@ -1834,14 +1834,12 @@ optimized_seq_sort ( UChar *block, Int32 last, Int32 *zptr, UInt16 *_quadrant,
 #define NUM 256
 
     {
-      Int32 barrier_output_view[256];
+      Int32 barrier_output_view[65536];
       Int32 barrier_output __attribute__((stream));
 
       for (i = 0; i < 256; i++)
 	{
-#pragma omp task firstprivate (i, ftab, _quadrant, _runningOrder, block, _bigDone, zptr, last,  numQSorted, firstAttempt_p, workLimit_p, workDone_p, j, ss, sb) output (barrier_output)
 	  {
-	    Int32 *_ftab = ftab;
 	    /*--
 	      Process big buckets, starting with the least full.
 	      --*/
@@ -1855,8 +1853,10 @@ optimized_seq_sort ( UChar *block, Int32 last, Int32 *zptr, UInt16 *_quadrant,
 	      we don't have to sort them at all.
 	      --*/
 	    for (j = 0; j <= 255; j++) {
+#pragma omp task firstprivate (ftab, _quadrant, block, zptr, last,  numQSorted, firstAttempt_p, workLimit_p, workDone_p, j, ss, sb) //output (barrier_output)
+	      {	      
 	      sb = (ss << 8) + j;
-	      if ( ! (_ftab[sb] & SETMASK) ) {
+	      if ( ! (ftab[sb] & SETMASK) ) {
 		Int32 lo = ftab[sb]   & CLEARMASK;
 		Int32 hi = (ftab[sb+1] & CLEARMASK) - 1;
 		if (hi > lo) {
@@ -1872,6 +1872,9 @@ optimized_seq_sort ( UChar *block, Int32 last, Int32 *zptr, UInt16 *_quadrant,
 		  /*   } */
 		}
 		ftab[sb] |= SETMASK;
+	      }
+
+	      /* barrier_output=j; */
 	      }
 	    }
 
@@ -1921,21 +1924,20 @@ optimized_seq_sort ( UChar *block, Int32 last, Int32 *zptr, UInt16 *_quadrant,
 	    /* } */
 
 	    /* for (j = 0; j <= 255; j++) ftab[(j << 8) + ss] |= SETMASK; */
-	    barrier_output = i;	    
 	  }
 
 	}
 
-      Int32 barrier_output_v[256];
+      Int32 barrier_output_v[65536];
 
-#pragma omp task input (barrier_output >> barrier_output_v[256])
-      {
-	for (i=0; i < 255; i++)
-	  {
-	    if (barrier_output_v[i])
-	      gsum++;
-	  }
-      }
+/* #pragma omp task input (barrier_output >> barrier_output_v[65536]) */
+/*       { */
+/* 	for (i=0; i < 255; i++) */
+/* 	  { */
+/* 	    if (barrier_output_v[i]) */
+/* 	      gsum++; */
+/* 	  } */
+/*       } */
 #pragma omp taskwait  
     }
 
@@ -1970,7 +1972,7 @@ void df_sortIt ( UChar *block, Int32 last, Int32 *zptr,
 
   block[-1] = block[last];
 
-  Int32 *_quadrant = calloc (last+NUM_OVERSHOOT_BYTES, sizeof (UInt16));
+  UInt16 *_quadrant = calloc (last+NUM_OVERSHOOT_BYTES, sizeof (UInt16));
 
   optimized_seq_sort (block, last, zptr, _quadrant, workDone_p, workLimit_p,firstAttempt_p, 0, last, 0, ftab);
    
