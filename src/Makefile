@@ -8,7 +8,7 @@ LIBWSTREAM_DF_DIR = $(LIB_DIR)
 ICC=/opt/intel/bin/icc
 
 ###########################################################################
-TEST= icc_obzip2 icc_bbzip2 obzip2 bbzip2
+TEST= icc_bzip2 icc_pbzip2
 CFLAGS =  -Wall -std=c99  -ffast-math -Wl,-rpath,$(INST_DIR)/lib64 -g  -DTIMING_OUTPUT#-fdump-tree-all #-Werror
 LDFLAGS = -L${LIB_DIR} -lm -lc -rdynamic -Wl,-rpath,$(LIB_DIR)
 
@@ -20,31 +20,16 @@ CFLAGS_DEBUG = -Wall -g -O3
 ICC_FLAGS = -O3 
 all: $(TEST)
 
-bzip2:bzip2.c spec.c common.h
-	gcc $(CFLAGS_DEBUG) -o $@ $^
-
-bzip2o:bzip2.o.c spec.c common.h
-	gcc $(CFLAGS_DEBUG) -o $@ $^
-
 stream_bzip2: stream_spec.c stream_bzip2.c common.h
 	$(GCC) $(CFLAGS) $(LDFLAGS) $^ -o $@ -fopenmp -Wl,-rpath,$(LIBWSTREAM_DF_DIR) -L${LIBWSTREAM_DF_DIR} -lwstream_df
 
-obzip2: compress.c spec.min.c common.h
-	gcc $(CFLAGS_DEBUG) -o $@ $^
-
-icc_obzip2: compress.c spec.min.c common.h
+icc_bzip2: compress.c spec.min.c common.h
 	$(ICC) $(ICC_CFLAGS) -o $@ $^
 
-bbzip2: compress_bsort2.c pmsort.c spec.min.c common.h
-	gcc $(CFLAGS_DEBUG) -fopenmp -o $@ $^
-
-icc_bbzip2: compress_bsort2.c pmsort.c spec.min.c common.h
+icc_pbzip2: parallel_compress.c spec.min.c common.h
 	$(ICC) $(ICC_CFLAGS) -openmp -o $@ $^
 
-df_bzip2: df_compress.c spec.min.c common.h tsu.h
-	gcc $(CFLAGS_WSTREAM) $(LDFLAGS_WSTREAM) $^ -o $@
-
-run: icc_obzip2 icc_bbzip2 obzip2 bbzip2
+run: icc_bzip2 icc_pbzip2
 	./run.sh
 
 clean:

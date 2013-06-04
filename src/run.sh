@@ -1,8 +1,8 @@
 #!/bin/bash
 
-./icc_obzip2 gdb.tar
+./icc_bzip2 gdb.tar
 mv out.compress.7 out.compress.7.1
-./icc_bbzip2 gdb.tar
+./icc_pbzip2 gdb.tar
 echo "===>testing correctness by comparing zipped file"
 difference=`diff out.compress.7*`
 if ["$difference" -eq ""]
