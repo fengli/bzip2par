@@ -1,6 +1,6 @@
 #!/bin/bash
 
-./obzip2 gdb.tar
+./bzip2 gdb.tar
 mv out.compress.7 out.compress.7.1
 ./openbzip2 gdb.tar
 echo "===>testing correctness by comparing zipped file"

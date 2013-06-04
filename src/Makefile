@@ -8,7 +8,7 @@ LIBWSTREAM_DF_DIR = $(LIB_DIR)
 
 OPENSTREAM_GCC = /home/li/tstar/open-stream/install/bin/gcc
 ###########################################################################
-TEST= openbzip2 obzip2 
+TEST= openbzip2 bzip2 
 CFLAGS =  -Wall -std=c99  -ffast-math -Wl,-rpath,$(INST_DIR)/lib64 -g  -DTIMING_OUTPUT#-fdump-tree-all #-Werror
 LDFLAGS = -L${LIB_DIR} -lm -lc -rdynamic -Wl,-rpath,$(LIB_DIR)
 
@@ -20,26 +20,14 @@ CFLAGS_DEBUG = -Wall -g -O0
 
 all: $(TEST)
 
-bzip2:bzip2.c spec.c common.h
-	gcc $(CFLAGS_DEBUG) -o $@ $^
-
-bzip2o:bzip2.o.c spec.c common.h
-	gcc $(CFLAGS_DEBUG) -o $@ $^
-
 stream_bzip2: stream_spec.c stream_bzip2.c common.h
 	$(GCC) $(CFLAGS) $(LDFLAGS_WSTREAM) $^ -o $@ -fopenmp -Wl,-rpath,$(LIBWSTREAM_DF_DIR) -L${LIBWSTREAM_DF_DIR} -lwstream_df
 
-obzip2: compress.c spec.min.c common.h
+bzip2: compress.c spec.min.c common.h
 	gcc $(CFLAGS_DEBUG) -o $@ $^
 
-bbzip2: compress_bsort2.c pmsort.c spec.min.c common.h
-	gcc $(CFLAGS_DEBUG) -fopenmp -o $@ $^
-
-openbzip2: compress_bsort2.c spec.min.c common.h
+openbzip2: parallel_compress.c spec.min.c common.h
 	$(OPENSTREAM_GCC) $(CFLAGS_DEBUG) $(LDFLAGS) -fopenmp -o $@ $^  -Wl,-rpath,$(LIBWSTREAM_DF_DIR) -L${LIBWSTREAM_DF_DIR} -lwstream_df
-
-df_bzip2: df_compress.c spec.min.c common.h tsu.h
-	gcc $(CFLAGS_WSTREAM) $(LDFLAGS_WSTREAM) $^ -o $@
 
 run: 
 	./run.sh
